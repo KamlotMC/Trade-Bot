@@ -2,13 +2,58 @@
 Configuration loader for the Meowcoin Market Maker bot.
 
 Reads config.yaml and .env to build a unified settings object.
+Handles PyInstaller frozen mode (single-file .exe) by:
+  - Reading bundled defaults from sys._MEIPASS
+  - Creating user-editable config/env next to the executable on first run
 """
 
 import os
+import sys
+import shutil
 import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
 from dotenv import load_dotenv
+
+
+def get_app_dir() -> Path:
+    """Return the directory where the executable (or script) lives.
+
+    For a PyInstaller one-file build this is the folder containing the .exe,
+    NOT the temp extraction folder.  For normal Python execution it is the
+    directory containing main.py / the working directory.
+    """
+    if getattr(sys, 'frozen', False):
+        # Running as a PyInstaller bundle
+        return Path(sys.executable).parent
+    return Path.cwd()
+
+
+def get_bundle_dir() -> Path:
+    """Return the directory where bundled data files are extracted.
+
+    For a PyInstaller one-file build this is the temp _MEIPASS folder.
+    For normal Python execution it is cwd().
+    """
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS)
+    return Path.cwd()
+
+
+def _ensure_user_file(filename: str) -> Path:
+    """Ensure a user-editable copy of *filename* exists next to the exe.
+
+    If the file doesn't exist in the app dir yet, copy the bundled default
+    from the _MEIPASS temp dir (or cwd for dev mode).
+    Returns the path to the user-editable file.
+    """
+    app_dir = get_app_dir()
+    user_file = app_dir / filename
+    if not user_file.exists():
+        bundled = get_bundle_dir() / filename
+        if bundled.exists():
+            shutil.copy2(bundled, user_file)
+    return user_file
 
 
 @dataclass
@@ -61,15 +106,34 @@ class BotConfig:
 
 
 def load_config(config_path: str = "config.yaml") -> BotConfig:
-    """Load configuration from YAML file and environment variables."""
-    # Load .env file
-    env_path = Path(config_path).parent / ".env"
+    """Load configuration from YAML file and environment variables.
+
+    When running as a frozen .exe the function will:
+      1. Copy the bundled config.yaml / .env.example to the exe directory
+         on first run so the user can edit them.
+      2. Read from those user-editable copies.
+    """
+    app_dir = get_app_dir()
+
+    # Resolve config path — if the caller passed the default, look next to exe
+    if config_path == "config.yaml":
+        user_config = _ensure_user_file("config.yaml")
+    else:
+        user_config = Path(config_path)
+
+    # Ensure .env.example is copied so user sees the template
+    _ensure_user_file(".env.example")
+
+    # Load .env from next to the config file (or next to exe)
+    env_path = user_config.parent / ".env"
+    if not env_path.exists():
+        # Also try next to the executable
+        env_path = app_dir / ".env"
     load_dotenv(dotenv_path=env_path)
 
     # Read YAML
-    config_file = Path(config_path)
-    if config_file.exists():
-        with open(config_file, "r") as f:
+    if user_config.exists():
+        with open(user_config, "r") as f:
             raw = yaml.safe_load(f) or {}
     else:
         raw = {}

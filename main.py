@@ -15,9 +15,10 @@ IMPORTANT: Read LEGAL_NOTICE.md before running this bot.
 """
 
 import argparse
+import os
 import sys
 
-from market_maker.config import load_config
+from market_maker.config import load_config, get_app_dir
 from market_maker.exchange_client import NonKYCClient
 from market_maker.logger import setup_logger
 from market_maker.risk_manager import RiskManager
@@ -64,6 +65,15 @@ LEGAL_DISCLAIMER = """
 """
 
 
+def _pause_before_exit():
+    """On Windows, pause so the console window doesn't close instantly."""
+    if getattr(sys, 'frozen', False):
+        try:
+            input("\nPress Enter to exit...")
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Meowcoin MEWC/USDT Market Maker Bot for NonKYC Exchange"
@@ -93,7 +103,13 @@ def main():
         config = load_config(args.config)
     except Exception as e:
         print(f"ERROR: Failed to load config from '{args.config}': {e}")
+        _pause_before_exit()
         sys.exit(1)
+
+    # Resolve log file path relative to the exe directory (not temp dir)
+    app_dir = get_app_dir()
+    if not os.path.isabs(config.logging.file):
+        config.logging.file = str(app_dir / config.logging.file)
 
     # Set up logging
     log = setup_logger("mewc_mm", config.logging)
@@ -102,13 +118,46 @@ def main():
     setup_logger("mewc_mm.strategy", config.logging)
     setup_logger("mewc_mm.risk", config.logging)
 
-    # Validate API keys
+    # Validate API keys — interactive first-run setup if missing
     if not config.exchange.api_key or not config.exchange.api_secret:
-        log.error(
-            "API credentials not configured. "
-            "Copy .env.example to .env and fill in your NonKYC API key and secret."
-        )
-        sys.exit(1)
+        env_file = app_dir / ".env"
+        print("=" * 60)
+        print("  FIRST-RUN SETUP")
+        print("=" * 60)
+        print()
+        print(f"  No API credentials found.")
+        print(f"  A .env.example file has been created at:")
+        print(f"    {app_dir / '.env.example'}")
+        print()
+        print("  You can either:")
+        print("    1. Enter your credentials now (they will be saved to .env)")
+        print("    2. Manually create a .env file next to the executable")
+        print()
+
+        try:
+            choice = input("  Enter credentials now? (yes/no): ").strip().lower()
+            if choice in ("yes", "y"):
+                api_key = input("  NonKYC API Key: ").strip()
+                api_secret = input("  NonKYC API Secret: ").strip()
+                if api_key and api_secret:
+                    with open(env_file, "w") as f:
+                        f.write(f"NONKYC_API_KEY={api_key}\n")
+                        f.write(f"NONKYC_API_SECRET={api_secret}\n")
+                    print(f"\n  Credentials saved to {env_file}")
+                    print("  Reloading configuration...\n")
+                    config = load_config(args.config)
+                else:
+                    print("\n  Empty credentials provided. Exiting.")
+                    _pause_before_exit()
+                    sys.exit(1)
+            else:
+                print(f"\n  Please create {env_file} with your credentials and run again.")
+                print("  See .env.example for the format.")
+                _pause_before_exit()
+                sys.exit(1)
+        except (EOFError, KeyboardInterrupt):
+            print("\n  Exiting.")
+            sys.exit(1)
 
     # Legal disclaimer
     print(LEGAL_DISCLAIMER)
@@ -146,6 +195,7 @@ def main():
     # Run
     log.info("Starting Meowcoin Market Maker...")
     bot.run()
+    _pause_before_exit()
 
 
 if __name__ == "__main__":

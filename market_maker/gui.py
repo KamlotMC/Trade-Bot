@@ -260,6 +260,7 @@ class MarketMakerGUI:
             ("quantity_multiplier", "Quantity Multiplier"),
             ("min_spread_pct", "Min Spread (e.g. 1 = 1%)"),
             ("min_bid_price", "Min Bid Price ($, 0=off)"),
+            ("min_order_value_usdt", "Min Order Value (USDT)"),
             ("refresh_interval_sec", "Refresh Interval (sec)"),
         ]
         for i, (key, label) in enumerate(strat_fields):
@@ -335,6 +336,7 @@ class MarketMakerGUI:
             "strategy.quantity_multiplier": str(s.quantity_multiplier),
             "strategy.min_spread_pct": str(s.min_spread_pct),
             "strategy.min_bid_price": str(s.min_bid_price),
+            "strategy.min_order_value_usdt": str(s.min_order_value_usdt),
             "strategy.refresh_interval_sec": str(s.refresh_interval_sec),
             "risk.max_mewc_exposure": str(r.max_mewc_exposure),
             "risk.max_usdt_exposure": str(r.max_usdt_exposure),

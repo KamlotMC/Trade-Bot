@@ -22,7 +22,7 @@ strategy:
   level_step_pct: 0.005
 
   # Base quantity per order (in MEWC)
-  base_quantity: 1000.0
+  base_quantity: 100000.0
 
   # Quantity multiplier per level (deeper levels get larger size)
   quantity_multiplier: 1.5
@@ -32,6 +32,9 @@ strategy:
 
   # Minimum bid price in USD — never place buy orders below this (0 = disabled)
   min_bid_price: 0.0
+
+  # Minimum order value in USDT — auto-increase quantity to meet exchange minimum
+  min_order_value_usdt: 1.10
 
   # Refresh interval in seconds (how often to cancel and replace orders)
   refresh_interval_sec: 30

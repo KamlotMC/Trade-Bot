@@ -223,7 +223,12 @@ class MarketMaker:
             bid_price = mid_price * (1.0 - bid_offset)
             bid_cost = qty * bid_price
 
-            if bid_price < self.cfg.min_bid_price:
+            # Ensure order meets exchange minimum value
+            if bid_price > 0 and bid_cost < self.cfg.min_order_value_usdt:
+                qty = self.cfg.min_order_value_usdt / bid_price * 1.05  # 5% buffer
+                bid_cost = qty * bid_price
+
+            if bid_price < self.cfg.min_bid_price and self.cfg.min_bid_price > 0:
                 logger.debug("Bid L%d price %.8f below min_bid_price %.4f — skipping",
                              level, bid_price, self.cfg.min_bid_price)
                 continue
@@ -240,12 +245,19 @@ class MarketMaker:
             ask_offset = max(ask_offset, self.cfg.min_spread_pct)  # Floor
             ask_price = mid_price * (1.0 + ask_offset)
 
-            if qty <= sell_inventory and ask_price > 0:
-                if self.risk.check_exposure("sell", qty, ask_price):
+            # Reset qty for ask side (recalculate from base)
+            ask_qty = self.cfg.base_quantity * (self.cfg.quantity_multiplier ** level)
+
+            # Ensure order meets exchange minimum value
+            if ask_price > 0 and (ask_qty * ask_price) < self.cfg.min_order_value_usdt:
+                ask_qty = self.cfg.min_order_value_usdt / ask_price * 1.05
+
+            if ask_qty <= sell_inventory and ask_price > 0:
+                if self.risk.check_exposure("sell", ask_qty, ask_price):
                     quotes.append(QuoteLevel(
-                        side="sell", price=ask_price, quantity=qty, level=level,
+                        side="sell", price=ask_price, quantity=ask_qty, level=level,
                     ))
-                    sell_inventory -= qty
+                    sell_inventory -= ask_qty
 
         logger.info(
             "Quotes computed: %d bids + %d asks | mid=%.8f skew=%.4f",

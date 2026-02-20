@@ -1,0 +1,69 @@
+# =============================================================================
+# Meowcoin Market Maker Bot - Configuration
+# =============================================================================
+
+# --- Exchange Settings ---
+exchange:
+  base_url: "https://api.nonkyc.io/api/v2"
+  ws_url: "wss://ws.nonkyc.io"
+  symbol: "MEWC/USDT"                 # Trading pair
+
+# --- Market Making Strategy ---
+strategy:
+  # Spread: percentage distance from mid-price for bid/ask placement
+  # e.g., 0.02 = 2% on each side (4% total spread)
+  spread_pct: 0.02
+
+  # Number of order levels on each side of the book
+  num_levels: 3
+
+  # Step between levels as a percentage
+  # e.g., 0.005 = 0.5% additional offset per level
+  level_step_pct: 0.005
+
+  # Base quantity per order (in MEWC)
+  base_quantity: 1000.0
+
+  # Quantity multiplier per level (deeper levels get larger size)
+  quantity_multiplier: 1.5
+
+  # Minimum spread percentage (safety floor — never tighten below this)
+  min_spread_pct: 0.01
+
+  # Refresh interval in seconds (how often to cancel and replace orders)
+  refresh_interval_sec: 30
+
+  # Order type: only "limit" is supported for market making
+  order_type: "limit"
+
+# --- Inventory / Risk Management ---
+risk:
+  # Maximum total MEWC exposure (long position cap)
+  max_mewc_exposure: 50000.0
+
+  # Maximum total USDT exposure (capital at risk cap)
+  max_usdt_exposure: 500.0
+
+  # Inventory skew factor: tilts quotes when inventory is imbalanced
+  # 0 = no skew, 1.0 = aggressive skew
+  inventory_skew_factor: 0.5
+
+  # Maximum percentage of available balance to deploy per side
+  max_balance_usage_pct: 0.80
+
+  # Stop-loss: halt if unrealized P&L drops below this (in USDT)
+  stop_loss_usdt: -50.0
+
+  # Maximum number of open orders allowed at any one time
+  max_open_orders: 20
+
+  # Daily loss limit in USDT — bot halts if exceeded
+  daily_loss_limit_usdt: -100.0
+
+# --- Logging ---
+logging:
+  level: "INFO"                        # DEBUG, INFO, WARNING, ERROR
+  file: "logs/market_maker.log"
+  console: true
+  max_file_size_mb: 10
+  backup_count: 5

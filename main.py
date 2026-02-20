@@ -194,8 +194,17 @@ def main():
 
     # Run
     log.info("Starting Meowcoin Market Maker...")
-    bot.run()
-    _pause_before_exit()
+    try:
+        bot.run()
+    except KeyboardInterrupt:
+        log.info("Shutting down...")
+    except Exception as e:
+        log.error("Bot stopped due to error: %s", e)
+        print(f"\nERROR: {e}")
+        print("\nCheck the log file for details.")
+        print(f"Log: {config.logging.file}")
+    finally:
+        _pause_before_exit()
 
 
 if __name__ == "__main__":

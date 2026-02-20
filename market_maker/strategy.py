@@ -63,11 +63,12 @@ class MarketMaker:
         logger.info("  Refresh: %ds", self.cfg.refresh_interval_sec)
         logger.info("=" * 60)
 
-        # Load market precision metadata
-        self.client.load_market_metadata()
-
         self._running = True
         try:
+            # Load market precision metadata
+            logger.info("Loading market metadata for %s...", self.exchange_cfg.symbol)
+            self.client.load_market_metadata()
+
             while self._running:
                 self._cycle()
                 time.sleep(self.cfg.refresh_interval_sec)
@@ -75,6 +76,7 @@ class MarketMaker:
             logger.info("Shutdown requested by user (Ctrl+C)")
         except Exception as e:
             logger.exception("Fatal error in main loop: %s", e)
+            raise  # Re-raise so main() can show the error to the user
         finally:
             self._shutdown()
 

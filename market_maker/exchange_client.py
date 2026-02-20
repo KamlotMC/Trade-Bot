@@ -88,7 +88,7 @@ class NonKYCClient:
             headers = self._sign_get(full_url)
 
         resp = self.session.get(full_url, headers=headers, timeout=15)
-        resp.raise_for_status()
+        self._check_response(resp)
         return resp.json()
 
     def _post(self, path: str, body: Dict, signed: bool = True) -> Any:
@@ -101,8 +101,39 @@ class NonKYCClient:
             headers = self._sign_post(url, body_str)
 
         resp = self.session.post(url, data=body_str, headers=headers, timeout=15)
-        resp.raise_for_status()
+        self._check_response(resp)
         return resp.json()
+
+    @staticmethod
+    def _check_response(resp: requests.Response) -> None:
+        """Check response and raise with a clear error message."""
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError:
+            # Try to extract the exchange's error message
+            try:
+                data = resp.json()
+                err = data.get("error", {})
+                msg = err.get("message", resp.text)
+                desc = err.get("description", "")
+                raise RuntimeError(
+                    f"API error {resp.status_code}: {msg}"
+                    + (f" — {desc}" if desc else "")
+                ) from None
+            except (ValueError, KeyError):
+                raise RuntimeError(
+                    f"API error {resp.status_code}: {resp.text[:200]}"
+                ) from None
+
+        # Also check for JSON-level errors (some endpoints return 200 with error body)
+        try:
+            data = resp.json()
+            if isinstance(data, dict) and "error" in data:
+                err = data["error"]
+                msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                raise RuntimeError(f"Exchange error: {msg}")
+        except (ValueError, AttributeError):
+            pass
 
     # -------------------------------------------------------------------------
     # Public endpoints

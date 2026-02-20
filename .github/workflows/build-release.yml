@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Executables
 
 on:
   push:
@@ -34,20 +34,61 @@ jobs:
           name: MeowcoinMarketMaker-Windows
           path: dist/MeowcoinMarketMaker.exe
 
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk binutils
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Linux binary
+        run: |
+          pyinstaller MeowcoinMarketMaker.spec
+          chmod +x dist/MeowcoinMarketMaker
+          mv dist/MeowcoinMarketMaker dist/MeowcoinMarketMaker-linux
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeowcoinMarketMaker-Linux
+          path: dist/MeowcoinMarketMaker-linux
+
   release:
-    needs: build-windows
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
-      - name: Download artifact
+      - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: MeowcoinMarketMaker-Windows
 
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MeowcoinMarketMaker-Linux
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: MeowcoinMarketMaker.exe
+          files: |
+            MeowcoinMarketMaker.exe
+            MeowcoinMarketMaker-linux
           generate_release_notes: true

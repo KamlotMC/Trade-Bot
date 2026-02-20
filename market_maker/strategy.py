@@ -212,6 +212,11 @@ class MarketMaker:
             bid_price = mid_price * (1.0 - bid_offset)
             bid_cost = qty * bid_price
 
+            if bid_price < self.cfg.min_bid_price:
+                logger.debug("Bid L%d price %.8f below min_bid_price %.4f — skipping",
+                             level, bid_price, self.cfg.min_bid_price)
+                continue
+
             if bid_cost <= buy_budget and bid_price > 0:
                 if self.risk.check_exposure("buy", qty, bid_price):
                     quotes.append(QuoteLevel(

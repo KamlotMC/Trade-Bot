@@ -30,6 +30,9 @@ strategy:
   # Minimum spread percentage (safety floor — never tighten below this)
   min_spread_pct: 0.01
 
+  # Minimum bid price in USD — never place buy orders below this
+  min_bid_price: 1.05
+
   # Refresh interval in seconds (how often to cancel and replace orders)
   refresh_interval_sec: 30
 

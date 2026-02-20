@@ -73,6 +73,7 @@ class StrategyConfig:
     base_quantity: float = 1000.0
     quantity_multiplier: float = 1.5
     min_spread_pct: float = 0.01
+    min_bid_price: float = 1.05
     refresh_interval_sec: int = 30
     order_type: str = "limit"
 
@@ -159,6 +160,7 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
         base_quantity=st_raw.get("base_quantity", StrategyConfig.base_quantity),
         quantity_multiplier=st_raw.get("quantity_multiplier", StrategyConfig.quantity_multiplier),
         min_spread_pct=st_raw.get("min_spread_pct", StrategyConfig.min_spread_pct),
+        min_bid_price=st_raw.get("min_bid_price", StrategyConfig.min_bid_price),
         refresh_interval_sec=st_raw.get("refresh_interval_sec", StrategyConfig.refresh_interval_sec),
         order_type=st_raw.get("order_type", StrategyConfig.order_type),
     )

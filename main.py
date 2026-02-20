@@ -187,6 +187,7 @@ def main():
         log.info("Spread:    %.2f%%", config.strategy.spread_pct * 100)
         log.info("Levels:    %d", config.strategy.num_levels)
         log.info("Base Qty:  %.2f MEWC", config.strategy.base_quantity)
+        log.info("Min Bid:   $%.2f", config.strategy.min_bid_price)
         log.info("Refresh:   %ds", config.strategy.refresh_interval_sec)
         log.info("Max MEWC:  %.2f", config.risk.max_mewc_exposure)
         log.info("Max USDT:  %.2f", config.risk.max_usdt_exposure)

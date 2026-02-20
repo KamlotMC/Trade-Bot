@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import time
 import uuid
 from decimal import Decimal, ROUND_DOWN
@@ -26,8 +27,8 @@ class NonKYCClient:
 
     def __init__(self, config: ExchangeConfig):
         self.base_url = config.base_url.rstrip("/")
-        self.api_key = config.api_key
-        self.api_secret = config.api_secret
+        self.api_key = self._sanitize_credential(config.api_key)
+        self.api_secret = self._sanitize_credential(config.api_secret)
         self.symbol = config.symbol
         self.session = requests.Session()
         self.session.headers.update({"Content-Type": "application/json"})
@@ -35,6 +36,37 @@ class NonKYCClient:
         # Market metadata cache
         self._price_decimals: Optional[int] = None
         self._quantity_decimals: Optional[int] = None
+
+        # Log masked key for debugging
+        if self.api_key:
+            masked = self.api_key[:4] + "****" + self.api_key[-4:]
+            logger.info(
+                "API key loaded: %s  (length %d)", masked, len(self.api_key)
+            )
+
+    # -------------------------------------------------------------------------
+    # Credential sanitisation
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _sanitize_credential(value: str) -> str:
+        """Strip whitespace, quotes, and invisible characters from a credential.
+
+        Users frequently copy-paste API keys with trailing newlines, spaces,
+        smart-quotes, or zero-width characters.  This normalises the value
+        so the HMAC signature is computed on the correct bytes.
+        """
+        if not value:
+            return ""
+        # Strip leading/trailing whitespace (including \r\n)
+        value = value.strip()
+        # Remove surrounding quotes (single or double, straight or smart)
+        for q in ('"', "'", "\u201c", "\u201d", "\u2018", "\u2019"):
+            if value.startswith(q) and value.endswith(q):
+                value = value[len(q):-len(q)]
+        # Remove common invisible / zero-width characters
+        value = re.sub(r"[\u200b\u200c\u200d\ufeff\u00a0]", "", value)
+        return value.strip()
 
     # -------------------------------------------------------------------------
     # Authentication helpers
@@ -110,6 +142,23 @@ class NonKYCClient:
         try:
             resp.raise_for_status()
         except requests.HTTPError:
+            # Provide specific guidance for authentication errors
+            if resp.status_code in (401, 403):
+                body = resp.text[:200]
+                raise RuntimeError(
+                    f"Authentication failed ({resp.status_code}): {body}\n\n"
+                    "Possible causes:\n"
+                    "  1. API key or secret is incorrect — double-check "
+                    "them on nonkyc.io under Account > API Keys.\n"
+                    "  2. Copy-paste error — make sure there are no extra "
+                    "spaces, quotes, or invisible characters.\n"
+                    "  3. The API key does not have trading permissions "
+                    "enabled on the exchange.\n"
+                    "  4. The API key may have been revoked or expired.\n"
+                    "  5. Your system clock may be significantly out of "
+                    "sync (the exchange rejects stale nonces)."
+                ) from None
+
             # Try to extract the exchange's error message
             try:
                 data = resp.json()
@@ -143,6 +192,65 @@ class NonKYCClient:
         """Get exchange server time (Unix ms)."""
         data = self._get("time")
         return data.get("serverTime", int(time.time() * 1000))
+
+    def test_connection(self) -> Dict[str, Any]:
+        """Test API connectivity and authentication.
+
+        Returns a dict with:
+          - ok (bool): True if everything works
+          - public (bool): True if the public API is reachable
+          - authenticated (bool): True if the signed request succeeded
+          - server_time_delta_ms (int): local minus server clock (ms)
+          - error (str): Error description when ok is False
+        """
+        result: Dict[str, Any] = {
+            "ok": False,
+            "public": False,
+            "authenticated": False,
+            "server_time_delta_ms": 0,
+            "error": "",
+        }
+
+        # 1. Public API check
+        try:
+            server_time = self.get_server_time()
+            result["public"] = True
+            local_time = int(time.time() * 1000)
+            result["server_time_delta_ms"] = local_time - server_time
+            logger.info(
+                "Public API OK.  Server-time delta: %+d ms",
+                result["server_time_delta_ms"],
+            )
+        except Exception as exc:
+            result["error"] = f"Cannot reach public API: {exc}"
+            logger.error(result["error"])
+            return result
+
+        # 2. Warn on excessive clock skew (> 30 s)
+        if abs(result["server_time_delta_ms"]) > 30_000:
+            logger.warning(
+                "Large clock skew detected (%+d ms). "
+                "This may cause authentication failures.  "
+                "Please synchronise your system clock.",
+                result["server_time_delta_ms"],
+            )
+
+        # 3. Authenticated check — lightweight balance call
+        if not self.api_key or not self.api_secret:
+            result["error"] = "API key or secret is empty."
+            logger.error(result["error"])
+            return result
+
+        try:
+            self.get_balances()
+            result["authenticated"] = True
+            result["ok"] = True
+            logger.info("Authentication OK — credentials are valid.")
+        except Exception as exc:
+            result["error"] = str(exc)
+            logger.error("Authentication FAILED: %s", exc)
+
+        return result
 
     def get_market_info(self, symbol: Optional[str] = None) -> Dict:
         """Get market metadata (price decimals, quantity decimals, etc.)."""

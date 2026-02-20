@@ -70,6 +70,13 @@ class MarketMaker:
 
         self._running = True
         try:
+            # Validate credentials before doing anything else
+            logger.info("Testing API connection...")
+            conn = self.client.test_connection()
+            if not conn["ok"]:
+                logger.error("Connection test failed: %s", conn["error"])
+                raise RuntimeError(conn["error"])
+
             # Load market precision metadata
             logger.info("Loading market metadata for %s...", self.exchange_cfg.symbol)
             self.client.load_market_metadata()

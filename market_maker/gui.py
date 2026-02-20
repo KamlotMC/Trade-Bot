@@ -191,6 +191,10 @@ class MarketMakerGUI:
             side=tk.LEFT
         )
 
+        ttk.Button(
+            ctrl, text="Test Connection", command=self._test_connection
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
         # — Status —
         status = ttk.LabelFrame(tab, text="Status", padding=8)
         status.pack(fill=tk.X, pady=(0, 6))
@@ -500,6 +504,62 @@ class MarketMakerGUI:
                 messagebox.showinfo("Saved", f"Credentials saved to:\n{env_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Could not save credentials:\n{e}")
+
+    def _test_connection(self) -> None:
+        """Test API connectivity and authentication in a background thread."""
+        # Save current credentials first
+        self._save_credentials(silent=True)
+
+        # Reload config so the latest creds are picked up
+        self._load_config()
+
+        if not self.config.exchange.api_key or not self.config.exchange.api_secret:
+            messagebox.showwarning(
+                "Missing Credentials",
+                "Please enter your NonKYC API Key and Secret first.",
+            )
+            return
+
+        def _run_test():
+            try:
+                client = NonKYCClient(self.config.exchange)
+                result = client.test_connection()
+                # Schedule the result dialog on the main thread
+                self.root.after(0, lambda: self._show_test_result(result))
+            except Exception as exc:
+                self.root.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        "Connection Test Failed",
+                        f"Unexpected error:\n{exc}",
+                    ),
+                )
+
+        threading.Thread(target=_run_test, daemon=True).start()
+
+    def _show_test_result(self, result: dict) -> None:
+        """Display the test_connection result to the user."""
+        if result["ok"]:
+            delta = result["server_time_delta_ms"]
+            messagebox.showinfo(
+                "Connection Test Passed",
+                "Public API: OK\n"
+                "Authentication: OK\n"
+                f"Clock skew: {delta:+d} ms\n\n"
+                "Your API credentials are working correctly!",
+            )
+        else:
+            parts = []
+            parts.append(f"Public API: {'OK' if result['public'] else 'FAILED'}")
+            parts.append(
+                f"Authentication: {'OK' if result['authenticated'] else 'FAILED'}"
+            )
+            if result["server_time_delta_ms"]:
+                parts.append(
+                    f"Clock skew: {result['server_time_delta_ms']:+d} ms"
+                )
+            parts.append(f"\nError:\n{result['error']}")
+            messagebox.showerror("Connection Test Failed", "\n".join(parts))
 
     def _save_settings(self) -> None:
         int_fields = {"num_levels", "refresh_interval_sec", "max_open_orders"}

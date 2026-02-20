@@ -253,13 +253,13 @@ class MarketMakerGUI:
         sf.pack(fill=tk.X, pady=(0, 10), padx=4)
 
         strat_fields = [
-            ("spread_pct", "Spread %"),
+            ("spread_pct", "Spread (e.g. 2 = 2%)"),
             ("num_levels", "Order Levels (per side)"),
-            ("level_step_pct", "Level Step %"),
+            ("level_step_pct", "Level Step (e.g. 0.5 = 0.5%)"),
             ("base_quantity", "Base Quantity (MEWC)"),
             ("quantity_multiplier", "Quantity Multiplier"),
-            ("min_spread_pct", "Min Spread %"),
-            ("min_bid_price", "Min Bid Price ($)"),
+            ("min_spread_pct", "Min Spread (e.g. 1 = 1%)"),
+            ("min_bid_price", "Min Bid Price ($, 0=off)"),
             ("refresh_interval_sec", "Refresh Interval (sec)"),
         ]
         for i, (key, label) in enumerate(strat_fields):
@@ -280,7 +280,7 @@ class MarketMakerGUI:
             ("max_mewc_exposure", "Max MEWC Exposure"),
             ("max_usdt_exposure", "Max USDT Exposure"),
             ("inventory_skew_factor", "Inventory Skew Factor"),
-            ("max_balance_usage_pct", "Max Balance Usage %"),
+            ("max_balance_usage_pct", "Max Balance Usage (e.g. 80 = 80%)"),
             ("stop_loss_usdt", "Stop Loss (USDT)"),
             ("max_open_orders", "Max Open Orders"),
             ("daily_loss_limit_usdt", "Daily Loss Limit (USDT)"),
@@ -308,6 +308,15 @@ class MarketMakerGUI:
         if not self.config:
             return
 
+        # Fields whose internal representation is a fraction (0.02) but
+        # should be displayed/entered as a percentage (2).
+        self._pct_fields = {
+            "strategy.spread_pct",
+            "strategy.level_step_pct",
+            "strategy.min_spread_pct",
+            "risk.max_balance_usage_pct",
+        }
+
         self.api_key_var.set(self.config.exchange.api_key or "")
         self.api_secret_var.set(self.config.exchange.api_secret or "")
 
@@ -332,7 +341,12 @@ class MarketMakerGUI:
         }
         for key, val in values.items():
             if key in self.setting_vars:
-                self.setting_vars[key].set(val)
+                # Convert fraction → percentage for display
+                if key in self._pct_fields:
+                    display_val = str(round(float(val) * 100, 4))
+                else:
+                    display_val = val
+                self.setting_vars[key].set(display_val)
 
     # -----------------------------------------------------------------
     # Logging
@@ -505,7 +519,11 @@ class MarketMakerGUI:
                 if field in int_fields:
                     config_data[section][field] = int(raw)
                 else:
-                    config_data[section][field] = float(raw)
+                    val = float(raw)
+                    # Convert percentage → fraction for storage
+                    if key in self._pct_fields:
+                        val = val / 100.0
+                    config_data[section][field] = val
 
             cfg_path = get_app_dir() / "config.yaml"
             with open(cfg_path, "w") as f:

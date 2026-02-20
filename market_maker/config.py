@@ -73,15 +73,15 @@ class StrategyConfig:
     base_quantity: float = 1000.0
     quantity_multiplier: float = 1.5
     min_spread_pct: float = 0.01
-    min_bid_price: float = 1.05
+    min_bid_price: float = 0.0
     refresh_interval_sec: int = 30
     order_type: str = "limit"
 
 
 @dataclass
 class RiskConfig:
-    max_mewc_exposure: float = 50000.0
-    max_usdt_exposure: float = 500.0
+    max_mewc_exposure: float = 50000000.0
+    max_usdt_exposure: float = 5000.0
     inventory_skew_factor: float = 0.5
     max_balance_usage_pct: float = 0.80
     stop_loss_usdt: float = -50.0

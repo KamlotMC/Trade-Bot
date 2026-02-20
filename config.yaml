@@ -30,8 +30,8 @@ strategy:
   # Minimum spread percentage (safety floor — never tighten below this)
   min_spread_pct: 0.01
 
-  # Minimum bid price in USD — never place buy orders below this
-  min_bid_price: 1.05
+  # Minimum bid price in USD — never place buy orders below this (0 = disabled)
+  min_bid_price: 0.0
 
   # Refresh interval in seconds (how often to cancel and replace orders)
   refresh_interval_sec: 30
@@ -42,10 +42,10 @@ strategy:
 # --- Inventory / Risk Management ---
 risk:
   # Maximum total MEWC exposure (long position cap)
-  max_mewc_exposure: 50000.0
+  max_mewc_exposure: 50000000.0
 
   # Maximum total USDT exposure (capital at risk cap)
-  max_usdt_exposure: 500.0
+  max_usdt_exposure: 5000.0
 
   # Inventory skew factor: tilts quotes when inventory is imbalanced
   # 0 = no skew, 1.0 = aggressive skew

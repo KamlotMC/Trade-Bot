@@ -68,10 +68,18 @@ LEGAL_DISCLAIMER = """
 def _pause_before_exit():
     """On Windows, pause so the console window doesn't close instantly."""
     if getattr(sys, 'frozen', False):
-        try:
-            input("\nPress Enter to exit...")
-        except (EOFError, KeyboardInterrupt):
-            pass
+        import platform
+        if platform.system() == "Windows":
+            # os.system("pause") is the most reliable way on Windows —
+            # it works even when stdin is unavailable / redirected.
+            print()  # blank line before prompt
+            os.system("pause")
+        else:
+            try:
+                input("\nPress Enter to exit...")
+            except (EOFError, KeyboardInterrupt):
+                import time as _t
+                _t.sleep(15)  # last resort — keep the window open briefly
 
 
 def main():
@@ -208,4 +216,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        pass  # argparse / normal sys.exit
+    except Exception as exc:
+        print(f"\n\nFATAL ERROR: {exc}")
+        import traceback; traceback.print_exc()
+        _pause_before_exit()

@@ -53,8 +53,13 @@ class MarketMaker:
     # Main loop
     # -------------------------------------------------------------------------
 
-    def run(self) -> None:
-        """Start the market-making loop."""
+    def run(self, stop_event=None) -> None:
+        """Start the market-making loop.
+
+        Args:
+            stop_event: optional ``threading.Event`` that, when set, tells
+                        the bot to exit promptly (used by the GUI).
+        """
         logger.info("=" * 60)
         logger.info("  Meowcoin Market Maker starting")
         logger.info("  Symbol:  %s", self.exchange_cfg.symbol)
@@ -71,7 +76,13 @@ class MarketMaker:
 
             while self._running:
                 self._cycle()
-                time.sleep(self.cfg.refresh_interval_sec)
+                # Use stop_event for responsive shutdown when available
+                if stop_event is not None:
+                    stop_event.wait(timeout=self.cfg.refresh_interval_sec)
+                    if stop_event.is_set():
+                        self._running = False
+                else:
+                    time.sleep(self.cfg.refresh_interval_sec)
         except KeyboardInterrupt:
             logger.info("Shutdown requested by user (Ctrl+C)")
         except Exception as e:

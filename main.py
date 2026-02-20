@@ -101,8 +101,27 @@ def main():
         action="store_true",
         help="Accept the legal disclaimer without interactive prompt",
     )
+    parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Run in command-line mode (skip the GUI)",
+    )
     args = parser.parse_args()
 
+    # ── GUI mode (default) ──
+    if not args.cli and not args.dry_run:
+        try:
+            from market_maker.gui import MarketMakerGUI
+            app = MarketMakerGUI()
+            app.run()
+            return
+        except ImportError:
+            pass  # tkinter unavailable — fall through to CLI
+        except Exception as e:
+            print(f"GUI failed to start: {e}")
+            print("Falling back to CLI mode...\n")
+
+    # ── CLI mode ──
     # Show banner
     print(BANNER)
 

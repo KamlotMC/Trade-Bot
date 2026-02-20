@@ -18,6 +18,7 @@ a = Analysis(
         'market_maker.strategy',
         'market_maker.risk_manager',
         'market_maker.logger',
+        'market_maker.gui',
     ],
     hookspath=[],
     hooksconfig={},

@@ -295,9 +295,14 @@ class MarketMakerGUI:
                 row=i, column=1, sticky=tk.W, pady=3
             )
 
-        # Save button
-        ttk.Button(inner, text="Save Settings", command=self._save_settings).pack(
-            pady=10
+        # Buttons row
+        btn_row = ttk.Frame(inner)
+        btn_row.pack(pady=10)
+        ttk.Button(btn_row, text="Save Settings", command=self._save_settings).pack(
+            side=tk.LEFT, padx=(0, 10)
+        )
+        ttk.Button(btn_row, text="Reset to Defaults", command=self._reset_defaults).pack(
+            side=tk.LEFT
         )
 
     # -----------------------------------------------------------------
@@ -541,6 +546,20 @@ class MarketMakerGUI:
             )
         except Exception as e:
             messagebox.showerror("Error", f"Could not save settings:\n{e}")
+
+    def _reset_defaults(self) -> None:
+        """Overwrite config.yaml with bundled defaults and refresh fields."""
+        if not messagebox.askyesno(
+            "Reset Settings",
+            "This will replace your config.yaml with the built-in defaults.\n\n"
+            "Your API credentials (.env) will NOT be affected.\n\nContinue?",
+        ):
+            return
+        from market_maker.config import _ensure_user_file
+        _ensure_user_file("config.yaml", force=True)
+        self._load_config()
+        self._populate_fields()
+        messagebox.showinfo("Reset", "Settings restored to defaults.")
 
     # -----------------------------------------------------------------
     # Disclaimer

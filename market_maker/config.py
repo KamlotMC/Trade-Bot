@@ -40,16 +40,16 @@ def get_bundle_dir() -> Path:
     return Path.cwd()
 
 
-def _ensure_user_file(filename: str) -> Path:
+def _ensure_user_file(filename: str, force: bool = False) -> Path:
     """Ensure a user-editable copy of *filename* exists next to the exe.
 
-    If the file doesn't exist in the app dir yet, copy the bundled default
-    from the _MEIPASS temp dir (or cwd for dev mode).
-    Returns the path to the user-editable file.
+    If the file doesn't exist in the app dir yet (or *force* is True),
+    copy the bundled default from the _MEIPASS temp dir (or cwd for
+    dev mode).  Returns the path to the user-editable file.
     """
     app_dir = get_app_dir()
     user_file = app_dir / filename
-    if not user_file.exists():
+    if force or not user_file.exists():
         bundled = get_bundle_dir() / filename
         if bundled.exists():
             shutil.copy2(bundled, user_file)
@@ -118,7 +118,7 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
 
     # Resolve config path — if the caller passed the default, look next to exe
     if config_path == "config.yaml":
-        user_config = _ensure_user_file("config.yaml")
+        user_config = _ensure_user_file("config.yaml", force=True)
     else:
         user_config = Path(config_path)
 
@@ -183,9 +183,29 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
         backup_count=lg_raw.get("backup_count", LoggingConfig.backup_count),
     )
 
-    return BotConfig(
+    return _sanitize_config(BotConfig(
         exchange=exchange,
         strategy=strategy,
         risk=risk,
         logging=logging_cfg,
-    )
+    ))
+
+
+def _sanitize_config(cfg: BotConfig) -> BotConfig:
+    """Auto-correct common mis-entries.
+
+    Percentage fields are stored as fractions (0.02 = 2%).  If the user
+    entered a value > 1 it almost certainly means they typed the percentage
+    directly (e.g. ``2`` instead of ``0.02``).  Fix it silently.
+    """
+    pct_fields = [
+        (cfg.strategy, "spread_pct"),
+        (cfg.strategy, "level_step_pct"),
+        (cfg.strategy, "min_spread_pct"),
+        (cfg.risk, "max_balance_usage_pct"),
+    ]
+    for obj, attr in pct_fields:
+        val = getattr(obj, attr)
+        if val > 1:
+            setattr(obj, attr, val / 100.0)
+    return cfg

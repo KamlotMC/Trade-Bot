@@ -178,3 +178,4 @@ This bot uses the [NonKYC REST API v2](https://api.nonkyc.io/):
 ## License
 
 MIT License. See [LEGAL_NOTICE.md](LEGAL_NOTICE.md) for full terms and risk disclosures.
+# Trade-Bot

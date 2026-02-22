@@ -5,26 +5,26 @@ exchange:
   fee_taker_pct: 0.002
 
 strategy:
-  spread_pct: 0.010              # 1.0% spread
-  min_spread_pct: 0.008
+  spread_pct: 0.014
+  min_spread_pct: 0.010
   num_levels: 2
-  level_step_pct: 0.005
+  level_step_pct: 0.008
   base_quantity: 35000.0
   quantity_multiplier: 1.0
-  refresh_interval_sec: 90       # 90s zamiast 25s - WIĘCEJ CZASU NA FILLE!
+  refresh_interval_sec: 35
   order_type: "limit"
   min_bid_price: 0.000008
 
 risk:
-  max_mewc_exposure: 1500000.0
-  max_usdt_exposure: 40.0
-  inventory_skew_factor: 1.10
-  inventory_target_ratio: 0.60
+  max_mewc_exposure: 950000.0
+  max_usdt_exposure: 35.0
+  inventory_skew_factor: 1.05
+  inventory_target_ratio: 0.55
   max_balance_usage_pct: 0.90
-  stop_loss_usdt: -20.0
-  daily_loss_limit_usdt: -40.0
+  stop_loss_usdt: -15.0
+  daily_loss_limit_usdt: -30.0
   max_open_orders: 4
-  min_profit_after_fees_pct: 0.006
+  min_profit_after_fees_pct: 0.008
   max_slippage_pct: 0.02
 
 logging:
@@ -35,10 +35,15 @@ logging:
   backup_count: 3
 
 volatility_adapter:
-  enabled: false
+  enabled: true
+  lookback_minutes: 10
+  spread_multiplier_high_vol: 0.9
+  spread_multiplier_pump: 1.3
+  high_vol_threshold_pct: 3.0
+  pump_threshold_pct: 5.0
 
 circuit_breaker:
   enabled: true
-  crash_threshold_pct: 20.0
-  time_window_minutes: 3
+  crash_threshold_pct: 15.0
+  time_window_minutes: 2
   pause_duration_sec: 90

@@ -52,7 +52,8 @@ def _ensure_user_file(filename: str, force: bool = False) -> Path:
     if force or not user_file.exists():
         bundled = get_bundle_dir() / filename
         if bundled.exists():
-            shutil.copy2(bundled, user_file)
+            if bundled.resolve() != user_file.resolve():
+                shutil.copy2(bundled, user_file)
     return user_file
 
 

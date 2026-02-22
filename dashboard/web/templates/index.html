@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MEWC Market Maker Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #000; color: #fff; padding: 20px; position: relative; min-height: 100vh; }
+        body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid rgba(255, 149, 0, 0.3); pointer-events: none; z-index: 9999; box-shadow: 0 0 40px rgba(255, 149, 0, 0.4), inset 0 0 40px rgba(255, 149, 0, 0.2); animation: borderPulse 3s ease-in-out infinite alternate; }
+        @keyframes borderPulse { 0% { opacity: 0.5; } 100% { opacity: 1; } }
+        .header { text-align: center; margin-bottom: 25px; }
+        .header h1 { font-size: 2em; color: #ff9500; font-weight: 300; letter-spacing: 2px; text-transform: uppercase; }
+        .status-bar { display: inline-flex; gap: 30px; margin-bottom: 15px; padding: 10px 20px; background: rgba(255,149,0,0.05); border-radius: 6px; border: 1px solid rgba(255,149,0,0.2); }
+        .status-item { display: flex; align-items: center; gap: 8px; color: #888; font-size: 0.9em; }
+        .status-indicator { width: 8px; height: 8px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 10px rgba(255,59,48,0.6); animation: pulse 2s ease-in-out infinite; }
+        .status-indicator.live { background: #34c759; box-shadow: 0 0 10px rgba(52,199,89,0.6); }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.9); } }
+        .grid { display: grid; gap: 15px; margin-bottom: 15px; }
+        .row-1 { grid-template-columns: repeat(4, 1fr); }
+        .row-2 { grid-template-columns: repeat(3, 1fr); }
+        .row-3 { grid-template-columns: 1fr 2fr; }
+        .row-4 { grid-template-columns: 2fr 1fr; }
+        .card { background: rgba(255, 149, 0, 0.03); border: 1px solid rgba(255, 149, 0, 0.15); border-radius: 8px; padding: 20px; position: relative; overflow: hidden; transition: all 0.3s ease; }
+        .card:hover { border-color: rgba(255, 149, 0, 0.4); box-shadow: 0 0 30px rgba(255, 149, 0, 0.15); transform: translateY(-2px); }
+        .card h2 { color: #ff9500; font-size: 0.8em; margin-bottom: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
+        .stat { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.85em; }
+        .stat-label { color: #666; }
+        .stat-value { font-weight: 600; color: #ff9500; }
+        .positive { color: #34c759; }
+        .negative { color: #ff3b30; }
+        .price-large { font-size: 2em; font-weight: 300; color: #ff9500; letter-spacing: 1px; }
+        .portfolio-item { text-align: center; padding: 15px 0; border-bottom: 1px solid rgba(255, 149, 0, 0.1); }
+        .portfolio-item:last-child { border-bottom: none; }
+        .portfolio-amount { font-size: 1.8em; font-weight: 300; color: #fff; }
+        .portfolio-value { font-size: 0.85em; color: #666; margin-top: 5px; }
+        .portfolio-label { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; color: #ff9500; font-size: 0.85em; text-transform: uppercase; }
+        .coin-icon { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7em; font-weight: bold; }
+        .coin-icon.mewc { background: linear-gradient(135deg, #ff6b00, #ff9500); }
+        .coin-icon.usdt { background: linear-gradient(135deg, #26a17b, #00c896); }
+        .pnl-card { text-align: center; }
+        .pnl-card.positive { border-color: rgba(52, 199, 89, 0.4); box-shadow: 0 0 30px rgba(52, 199, 89, 0.15); }
+        .pnl-card.negative { border-color: rgba(255, 59, 48, 0.4); box-shadow: 0 0 30px rgba(255, 59, 48, 0.15); }
+        .pnl-value { font-size: 2em; font-weight: 300; margin: 15px 0; }
+        .order-item { padding: 10px; margin: 6px 0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; background: rgba(0,0,0,0.4); }
+        .order-item.buy { border-left: 2px solid #34c759; }
+        .order-item.sell { border-left: 2px solid #ff3b30; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+        th { color: #ff9500; padding: 10px; text-align: left; border-bottom: 1px solid rgba(255,149,0,0.3); }
+        td { padding: 8px 10px; border-bottom: 1px solid rgba(255,149,0,0.1); }
+        .buy { color: #34c759; }
+        .sell { color: #ff3b30; }
+        #portfolioChart { max-height: 250px; }
+        .error-box { background: rgba(255, 59, 48, 0.1); border-left: 2px solid #ff3b30; padding: 8px; margin: 6px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="status-bar">
+            <div class="status-item">
+                <div id="statusIndicator" class="status-indicator"></div>
+                <span id="statusText">OFFLINE</span>
+            </div>
+            <div class="status-item">
+                <span>Odświeżanie za:</span>
+                <span id="countdown" style="color: #ff9500; font-weight: 600;">5s</span>
+            </div>
+        </div>
+        <h1>MEWC Market Maker</h1>
+    </div>
+
+    <div class="grid row-1">
+        <div class="card">
+            <h2><i class="fas fa-chart-line"></i> Cena MEWC</h2>
+            <div class="price-large" id="price">-</div>
+            <div id="priceChange" style="margin: 10px 0; font-size: 0.9em;">-</div>
+            <div class="stat"><span class="stat-label">Bid</span><span class="stat-value" id="bid">-</span></div>
+            <div class="stat"><span class="stat-label">Ask</span><span class="stat-value" id="ask">-</span></div>
+            <div class="stat"><span class="stat-label">24h Volume</span><span class="stat-value" id="volume">-</span></div>
+        </div>
+
+        <div class="card">
+            <h2><i class="fas fa-wallet"></i> Portfel</h2>
+            <div class="portfolio-item">
+                <div class="portfolio-label"><span class="coin-icon mewc">M</span>MEWC</div>
+                <div class="portfolio-amount" id="mewcBalance">-</div>
+                <div class="portfolio-value" id="mewcValue">-</div>
+            </div>
+            <div class="portfolio-item">
+                <div class="portfolio-label"><span class="coin-icon usdt">T</span>USDT</div>
+                <div class="portfolio-amount" id="usdtBalance">-</div>
+                <div class="portfolio-value" id="usdtValue">-</div>
+            </div>
+            <div class="stat" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,149,0,0.2);">
+                <span class="stat-label">Total Value</span>
+                <span class="stat-value" id="totalValue">-</span>
+            </div>
+            <div class="stat" style="padding-top: 8px;">
+                <span class="stat-label">P&L (od 7:00)</span>
+                <span class="stat-value" id="portfolioPnL">-</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2><i class="fas fa-robot"></i> Status Bota</h2>
+            <div class="stat"><span class="stat-label">Cykl</span><span class="stat-value" id="botCycle">-</span></div>
+            <div class="stat"><span class="stat-label">Mid Price</span><span class="stat-value" id="botMid">-</span></div>
+            <div class="stat"><span class="stat-label">Skew</span><span class="stat-value" id="botSkew">-</span></div>
+            <div class="stat"><span class="stat-label">Bidy/Aski</span><span class="stat-value" id="botOrders">-</span></div>
+        </div>
+
+        <div class="card pnl-card">
+            <h2><i class="fas fa-trophy"></i> Win Rate</h2>
+            <div class="pnl-value" id="winRate">-</div>
+            <div class="stat"><span class="stat-label">Total Trades</span><span class="stat-value" id="totalTrades">-</span></div>
+        </div>
+    </div>
+
+    <div class="grid row-2">
+        <div class="card pnl-card" id="pnlDailyCard">
+            <h2><i class="fas fa-calendar-day"></i> P&L Dzienny</h2>
+            <div class="pnl-value" id="pnlDaily">-</div>
+            <div class="stat"><span class="stat-label">Trades</span><span class="stat-value" id="tradesDaily">-</span></div>
+        </div>
+        <div class="card pnl-card" id="pnlWeeklyCard">
+            <h2><i class="fas fa-calendar-week"></i> P&L Tygodniowy</h2>
+            <div class="pnl-value" id="pnlWeekly">-</div>
+            <div class="stat"><span class="stat-label">Trades</span><span class="stat-value" id="tradesWeekly">-</span></div>
+        </div>
+        <div class="card pnl-card" id="pnlMonthlyCard">
+            <h2><i class="fas fa-calendar-alt"></i> P&L Miesięczny</h2>
+            <div class="pnl-value" id="pnlMonthly">-</div>
+            <div class="stat"><span class="stat-label">Trades</span><span class="stat-value" id="tradesMonthly">-</span></div>
+        </div>
+    </div>
+
+    <div class="grid row-3">
+        <div class="card">
+            <h2><i class="fas fa-list"></i> Otwarte Ordery</h2>
+            <div id="ordersList"></div>
+        </div>
+        <div class="card">
+            <h2><i class="fas fa-chart-area"></i> Wykres Portfela</h2>
+            <canvas id="portfolioChart"></canvas>
+        </div>
+    </div>
+
+    <div class="grid row-4">
+        <div class="card">
+            <h2><i class="fas fa-exchange-alt"></i> Ostatnie Trade'y</h2>
+            <table>
+                <thead><tr><th>Time</th><th>Side</th><th>Qty</th><th>Price</th><th>P&L</th></tr></thead>
+                <tbody id="tradesTable"></tbody>
+            </table>
+        </div>
+        <div class="card">
+            <h2><i class="fas fa-exclamation-triangle"></i> Błędy</h2>
+            <div id="errorsList"></div>
+        </div>
+    </div>
+
+    <script>
+        let chart = null, countdown = 5, lastConn = false;
+
+        // Format functions with proper decimal places
+        function fmt(n, d=2) { 
+            if (n === null || n === undefined || isNaN(n)) return '-'; 
+            return Number(n).toLocaleString('pl-PL', {minimumFractionDigits: d, maximumFractionDigits: d}); 
+        }
+        function fmtInt(n) { 
+            if (n === null || n === undefined || isNaN(n)) return '-'; 
+            return Number(n).toLocaleString('pl-PL'); 
+        }
+        function price(n) { 
+            if (n === null || n === undefined || isNaN(n)) return '-'; 
+            return Number(n).toFixed(8); 
+        }
+
+        function updateCountdown() { countdown = (countdown - 1 + 6) % 6; document.getElementById('countdown').textContent = countdown + 's'; }
+        
+        function updateStatus(on) {
+            const i = document.getElementById('statusIndicator'), t = document.getElementById('statusText');
+            if (on !== lastConn) {
+                lastConn = on;
+                i.className = 'status-indicator' + (on ? ' live' : '');
+                t.textContent = on ? 'LIVE' : 'OFFLINE';
+            }
+        }
+
+        async function api(url) { 
+            try { 
+                const r = await fetch(url); 
+                if (!r.ok) throw new Error(r.status); 
+                return await r.json(); 
+            } catch (e) { 
+                console.error(`API error ${url}:`, e);
+                return null; 
+            } 
+        }
+
+        async function update() {
+            console.log('🔄 Dashboard update...');
+            console.log('🔄 Dashboard update started...');
+            try {
+                // Fetch all data with individual error handling
+                const fetchData = async (url) => {
+                    try {
+                        const r = await fetch(url);
+                        if (!r.ok) throw new Error(r.status);
+                        return await r.json();
+                    } catch (e) {
+                        console.error(`Error fetching ${url}:`, e);
+                        return null;
+                    }
+                };
+
+                const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability] = await Promise.all([
+                    api('/api/price'), api('/api/portfolio'), api('/api/pnl'),
+                    api('/api/pnl-saldo'), api('/api/win-rate'), api('/api/fills'),
+                    api('/api/history'), api('/api/open-orders-logs'),
+                    api('/api/errors'), api('/api/bot-status')
+                ]);
+
+                // Price
+                if (p) {
+                    document.getElementById('price').textContent = price(p.last_price);
+                    document.getElementById('bid').textContent = price(p.bid);
+                    document.getElementById('ask').textContent = price(p.ask);
+                    const ch = document.getElementById('priceChange');
+                    const changeVal = parseFloat(p.change_percent) || 0;
+                    ch.textContent = (changeVal >= 0 ? '+' : '') + p.change_percent + '%';
+                    ch.className = changeVal >= 0 ? 'positive' : 'negative';
+                    document.getElementById('volume').textContent = fmt(p.usd_volume_est, 0) + ' USDT';
+                }
+
+                // Portfolio
+                if (pf) {
+                    document.getElementById('mewcBalance').textContent = fmtInt(pf.mewc_balance);
+                    document.getElementById('mewcValue').textContent = fmt(pf.mewc_value_usdt, 2) + ' USDT';
+                    document.getElementById('usdtBalance').textContent = fmt(pf.usdt_balance, 2);
+                    document.getElementById('usdtValue').textContent = fmt(pf.usdt_balance, 2) + ' USDT';
+                    document.getElementById('totalValue').textContent = fmt(pf.total_value_usdt, 2) + ' USDT';
+                    
+                    if (pnlSaldo) {
+                        const pnlEl = document.getElementById('portfolioPnL');
+                        const val = pnlSaldo.pnl || 0;
+                        pnlEl.textContent = (val >= 0 ? '+' : '') + fmt(val, 2) + ' USDT';
+                        pnlEl.className = 'stat-value ' + (val >= 0 ? 'positive' : 'negative');
+                    }
+                }
+
+                // Bot Status
+                if (bot) {
+                    document.getElementById('botCycle').textContent = bot.last_cycle || '-';
+                    document.getElementById('botMid').textContent = price(bot.last_mid_price);
+                    document.getElementById('botSkew').textContent = (bot.last_skew !== null && bot.last_skew !== undefined) ? Number(bot.last_skew).toFixed(4) : '-';
+                    document.getElementById('botOrders').textContent = (bot.active_bids || 0) + '/' + (bot.active_asks || 0);
+                }
+
+                // P&L sections
+                if (pnl) {
+                    ['daily', 'weekly', 'monthly'].forEach(period => {
+                        const d = pnl[period] || {};
+                        const el = document.getElementById('pnl' + period.charAt(0).toUpperCase() + period.slice(1));
+                        const card = document.getElementById('pnl' + period.charAt(0).toUpperCase() + period.slice(1) + 'Card');
+                        const val = d.net || 0;
+                        const trades = d.trades || 0;
+                        
+                        el.textContent = (val >= 0 ? '+' : '') + fmt(val, 2) + ' USDT';
+                        el.className = 'pnl-value ' + (val >= 0 ? 'positive' : 'negative');
+                        card.className = 'card pnl-card' + (val >= 0 ? ' positive' : ' negative');
+                        document.getElementById('trades' + period.charAt(0).toUpperCase() + period.slice(1)).textContent = trades;
+                    });
+                }
+
+                // Win Rate
+                if (wr) {
+                    document.getElementById('winRate').textContent = wr.win_rate + '%';
+                    document.getElementById('totalTrades').textContent = wr.total;
+                }
+
+                // Orders
+                const ol = document.getElementById('ordersList');
+                if (orders && orders.length > 0) {
+                    ol.innerHTML = orders.slice(0, 5).map(o => 
+                        '<div class="order-item ' + o.side.toLowerCase() + '">' +
+                        '<strong>' + o.side.toUpperCase() + '</strong>' +
+                        '<span>' + fmtInt(o.quantity) + ' MEWC</span>' +
+                        '<span style="color:#ff9500">' + price(o.price) + ' USDT</span>' +
+                        '</div>'
+                    ).join('');
+                } else {
+                    ol.innerHTML = '<p style="color:#666">Brak orderów</p>';
+                }
+
+                // Trades with calculated P&L
+                const tb = document.getElementById('tradesTable');
+                if (!fills || fills.length === 0) {
+                    tb.innerHTML = '<tr><td colspan="5" style="color:#666">Brak trade\'ów</td></tr>';
+                } else {
+                    tb.innerHTML = fills.slice(0, 10).map(t => {
+                        const pnlVal = t.calculated_pnl !== null && t.calculated_pnl !== undefined ? t.calculated_pnl : (t.pnl || null);
+                        const pnlCls = pnlVal !== null ? (pnlVal >= 0 ? 'positive' : 'negative') : '';
+                        const pnlTxt = pnlVal !== null ? fmt(pnlVal, 4) : '-';
+                        return '<tr>' +
+                            '<td>' + new Date(t.timestamp).toLocaleTimeString() + '</td>' +
+                            '<td class="' + (t.side || '').toLowerCase() + '">' + (t.side || '').toUpperCase() + '</td>' +
+                            '<td>' + fmtInt(t.quantity) + '</td>' +
+                            '<td>' + price(t.price) + '</td>' +
+                            '<td class="' + pnlCls + '">' + pnlTxt + '</td>' +
+                            '</tr>';
+                    }).join('');
+                }
+
+                // Errors
+                const el = document.getElementById('errorsList');
+                if (errors && errors.length > 0) {
+                    el.innerHTML = errors.slice(0, 5).map(e => '<div class="error-box">' + e + '</div>').join('');
+                } else {
+                    el.innerHTML = '<span style="color:#34c759">Brak błędów</span>';
+                }
+
+                // Chart
+                if (hist && hist.length > 0) {
+                    if (chart) chart.destroy();
+                    chart = new Chart(document.getElementById('portfolioChart'), {
+                        type: 'line',
+                        data: {
+                            labels: hist.map(h => new Date(h.timestamp).toLocaleDateString()),
+                            datasets: [{
+                                data: hist.map(h => h.total_value_usdt),
+                                borderColor: '#ff9500',
+                                backgroundColor: 'rgba(255, 149, 0, 0.1)',
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                x: { grid: { display: false }, ticks: { color: '#666' } },
+                                y: { grid: { color: 'rgba(255, 149, 0, 0.1)' }, ticks: { color: '#666' } }
+                            }
+                        }
+                    });
+                }
+
+                
+                // Fetch profitability stats
+                if (profitability) {
+                    document.getElementById('statTotalTrades').textContent = profitability.total_trades;
+                    document.getElementById('statWinRate').textContent = profitability.win_rate_pct + '%';
+                    document.getElementById('statVolume').textContent = fmt(profitability.total_volume_usdt, 0) + ' USDT';
+                    document.getElementById('statFees').textContent = fmt(profitability.total_fees_usdt, 4) + ' USDT';
+                    document.getElementById('statGrossProfit').textContent = '+' + fmt(profitability.gross_profit_usdt, 4) + ' USDT';
+                    document.getElementById('statNetProfit').textContent = (profitability.net_profit_usdt >= 0 ? '+' : '') + fmt(profitability.net_profit_usdt, 4) + ' USDT';
+                    document.getElementById('statAvgTrade').textContent = fmt(profitability.avg_trade_profit_usdt, 4) + ' USDT';
+                    document.getElementById('statProfitFactor').textContent = profitability.profit_factor;
+                    document.getElementById('statBestTrade').textContent = '+' + fmt(profitability.best_trade_usdt, 4) + ' USDT';
+                    document.getElementById('statWorstTrade').textContent = fmt(profitability.worst_trade_usdt, 4) + ' USDT';
+                }
+
+                updateStatus(true);
+                countdown = 5;
+            } catch (e) {
+                console.error('Update error:', e);
+                updateStatus(false);
+            }
+        }
+
+        // Initial update and intervals
+        update();
+        setInterval(update, 5000);
+        setInterval(updateCountdown, 1000);
+    </script>
+
+    <div class="grid row-2" style="margin-top: 15px;">
+        <div class="card">
+            <h2><i class="fas fa-chart-bar"></i> Statystyki Profitability</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85em;">
+                <div class="stat"><span class="stat-label">Total Trades:</span><span class="stat-value" id="statTotalTrades">-</span></div>
+                <div class="stat"><span class="stat-label">Win Rate:</span><span class="stat-value" id="statWinRate">-</span></div>
+                <div class="stat"><span class="stat-label">Volume:</span><span class="stat-value" id="statVolume">-</span></div>
+                <div class="stat"><span class="stat-label">Total Fees:</span><span class="stat-value" id="statFees">-</span></div>
+                <div class="stat"><span class="stat-label">Gross Profit:</span><span class="stat-value positive" id="statGrossProfit">-</span></div>
+                <div class="stat"><span class="stat-label">Net Profit:</span><span class="stat-value" id="statNetProfit">-</span></div>
+                <div class="stat"><span class="stat-label">Avg Trade:</span><span class="stat-value" id="statAvgTrade">-</span></div>
+                <div class="stat"><span class="stat-label">Profit Factor:</span><span class="stat-value" id="statProfitFactor">-</span></div>
+            </div>
+        </div>
+        <div class="card">
+            <h2><i class="fas fa-trophy"></i> Najlepsze/Najgorsze Trade'y</h2>
+            <div style="font-size: 0.85em;">
+                <div class="stat" style="padding: 10px 0; border-bottom: 1px solid rgba(255,149,0,0.1);">
+                    <span class="stat-label">🏆 Best Trade:</span>
+                    <span class="stat-value positive" id="statBestTrade">-</span>
+                </div>
+                <div class="stat" style="padding: 10px 0;">
+                    <span class="stat-label">📉 Worst Trade:</span>
+                    <span class="stat-value negative" id="statWorstTrade">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

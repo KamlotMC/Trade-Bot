@@ -1,0 +1,25 @@
+exchange:
+  base_url: "https://api.nonkyc.io/api/v2"
+  symbol: "MEWC/USDT"
+  fee_maker_pct: 0.002
+
+strategy:
+  spread_pct: 0.012              # 1.2% spread (było 5.6%)
+  min_spread_pct: 0.008
+  num_levels: 1
+  level_step_pct: 0.01
+  base_quantity: 50000.0         # Mniejsze ordery = łatwiej wypełnić
+  refresh_interval_sec: 45       # Szybszy refresh
+  order_type: "limit"
+
+risk:
+  max_mewc_exposure: 900000.0
+  max_usdt_exposure: 45.0
+  inventory_skew_factor: 1.10    # Lekki bias na kupno
+  inventory_target_ratio: 0.70
+  stop_loss_usdt: -20.0
+  max_open_orders: 2
+
+logging:
+  level: "INFO"
+  file: "logs/market_maker.log"

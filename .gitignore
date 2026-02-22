@@ -10,3 +10,11 @@ venv/
 logs/
 *.log
 .DS_Store
+
+# Backup files
+*.backup
+*.backup.*
+
+# Database files
+*.db
+!data.db.example

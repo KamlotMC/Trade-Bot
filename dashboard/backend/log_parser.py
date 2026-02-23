@@ -20,7 +20,7 @@ class LogParser:
                 log_lines = f.readlines()[-lines:]
             
             return [line.strip() for line in log_lines if 'ERROR' in line or 'Exception' in line][:10]
-        except:
+        except Exception:
             return []
     
     def get_bot_status(self, lines: int = 100) -> Dict:

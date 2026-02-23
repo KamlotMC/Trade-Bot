@@ -503,7 +503,13 @@ async def api_manual_order(payload: dict):
     else:
         result = api_client.create_market_order(side, quantity, "MEWC_USDT")
 
-    return {"ok": "error" not in result, "result": result, "preflight": pre}
+    ok = isinstance(result, dict) and "error" not in result
+    return {
+        "ok": ok,
+        "error": (result.get("error") if isinstance(result, dict) and "error" in result else None),
+        "result": result,
+        "preflight": pre,
+    }
 
 
 @app.post("/api/orders/cancel-all")

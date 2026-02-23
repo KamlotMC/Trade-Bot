@@ -184,8 +184,12 @@ class RiskManager:
 
         # Ratio of MEWC value in total portfolio (0 to 1)
         mewc_ratio = mewc_value_usdt / total_portfolio
-        # Neutral is 0.5 (50/50), skew is deviation from that
-        skew = (mewc_ratio - 0.5) * 2.0  # Range: -1.0 to 1.0
+        # Neutral is configurable via inventory_target_ratio
+        target = min(max(self.cfg.inventory_target_ratio, 0.0), 1.0)
+        # Normalize by the furthest possible distance to keep range roughly [-1, 1]
+        denom = max(target, 1.0 - target, 1e-9)
+        skew = (mewc_ratio - target) / denom
+        skew = max(min(skew, 1.0), -1.0)
         return skew * self.cfg.inventory_skew_factor
 
     # -------------------------------------------------------------------------

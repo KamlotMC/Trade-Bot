@@ -56,6 +56,35 @@ def get_asset_totals(balances, asset: str) -> float:
         total += free_part + locked_part
     return total
 
+def enrich_trades_with_realized_pnl(trades: list) -> list:
+    """Return trades enriched with FIFO-based realized P&L on SELL fills."""
+    enriched = []
+    pos, avg = 0.0, 0.0
+
+    for t in reversed(trades):
+        side = str(t.get("side", "")).upper()
+        qty = sf(t.get("quantity"))
+        prc = sf(t.get("price"))
+        fee = sf(t.get("fee"))
+        calc_pnl = None
+
+        if side == "BUY" and qty > 0:
+            cost = (pos * avg) + (qty * prc) + fee
+            pos += qty
+            avg = cost / pos if pos > 0 else 0
+        elif side == "SELL" and pos > 0 and qty > 0:
+            rev = (qty * prc) - fee
+            cst = qty * avg
+            calc_pnl = rev - cst
+            pos -= qty
+
+        tt = dict(t)
+        tt["calculated_pnl"] = calc_pnl
+        enriched.append(tt)
+
+    return list(reversed(enriched))
+
+
 def get_price_data():
     """Get MEWC price data - FIXED with correct field names"""
     try:
@@ -202,29 +231,13 @@ async def api_pnl_saldo():
 async def api_win_rate():
     trades = data_store.get_trades(1000, 30)
     print(f"📊 Win rate: {len(trades)} trades in DB")
-    
-    pos, avg, wins, losses = 0.0, 0.0, 0, 0
-    
-    for t in reversed(trades):
-        side = t.get("side", "").upper()
-        qty = sf(t.get("quantity"))
-        prc = sf(t.get("price"))
-        fee = sf(t.get("fee"))
-        
-        if side == "BUY" and qty > 0:
-            cost = (pos * avg) + (qty * prc) + fee
-            pos += qty
-            avg = cost / pos if pos > 0 else 0
-        elif side == "SELL" and pos > 0 and qty > 0:
-            rev = (qty * prc) - fee
-            cst = qty * avg
-            if rev > cst:
-                wins += 1
-            elif rev < cst:
-                losses += 1
-            pos -= qty
-    
+
+    enriched = enrich_trades_with_realized_pnl(trades)
+    realized = [t.get("calculated_pnl") for t in enriched if t.get("calculated_pnl") is not None]
+    wins = sum(1 for p in realized if p > 0)
+    losses = sum(1 for p in realized if p < 0)
     total = wins + losses
+
     result = {
         "win_rate": round((wins / total * 100), 1) if total > 0 else 0,
         "winning": wins,
@@ -320,31 +333,7 @@ async def api_fills():
             trades = data_store.get_trades(50, 30)
     print(f"📊 Fills: {len(trades)} trades from DB")
     
-    result = []
-    pos, avg = 0.0, 0.0
-    
-    for t in reversed(trades):
-        side = t.get("side", "").upper()
-        qty = sf(t.get("quantity"))
-        prc = sf(t.get("price"))
-        fee = sf(t.get("fee"))
-        calc_pnl = None
-        
-        if side == "BUY" and qty > 0:
-            cost = (pos * avg) + (qty * prc) + fee
-            pos += qty
-            avg = cost / pos if pos > 0 else 0
-        elif side == "SELL" and pos > 0 and qty > 0:
-            rev = (qty * prc) - fee
-            cst = qty * avg
-            calc_pnl = rev - cst
-            pos -= qty
-        
-        trade_with_pnl = dict(t)
-        trade_with_pnl["calculated_pnl"] = calc_pnl
-        result.append(trade_with_pnl)
-    
-    final_result = list(reversed(result))
+    final_result = enrich_trades_with_realized_pnl(trades)
     print(f"✅ Returning {len(final_result)} trades")
     return final_result
 
@@ -428,22 +417,24 @@ async def get_profitability_stats():
     
     # Calculate statistics
     total_trades = len(trades)
-    total_volume = sum(t.get("quantity", 0) * t.get("price", 0) for t in trades)
-    total_fees = sum(t.get("fee", 0) for t in trades)
-    
-    winning_trades = [t for t in trades if t.get("pnl", 0) > 0]
-    losing_trades = [t for t in trades if t.get("pnl", 0) < 0]
-    
-    gross_profit = sum(t.get("pnl", 0) for t in winning_trades)
-    gross_loss = abs(sum(t.get("pnl", 0) for t in losing_trades))
-    net_profit = gross_profit - gross_loss - total_fees
-    
-    avg_trade = net_profit / total_trades if total_trades > 0 else 0
-    best_trade = max((t.get("pnl", 0) for t in trades), default=0)
-    worst_trade = min((t.get("pnl", 0) for t in trades), default=0)
-    
+    total_volume = sum(sf(t.get("quantity")) * sf(t.get("price")) for t in trades)
+    total_fees = sum(sf(t.get("fee")) for t in trades)
+
+    enriched = enrich_trades_with_realized_pnl(trades)
+    realized = [sf(t.get("calculated_pnl")) for t in enriched if t.get("calculated_pnl") is not None]
+    winning_trades = [p for p in realized if p > 0]
+    losing_trades = [p for p in realized if p < 0]
+
+    gross_profit = sum(winning_trades)
+    gross_loss = abs(sum(losing_trades))
+    net_profit = gross_profit - gross_loss
+
+    avg_trade = net_profit / len(realized) if realized else 0
+    best_trade = max(realized, default=0)
+    worst_trade = min(realized, default=0)
+
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
-    
+
     return {
         "total_trades": total_trades,
         "winning_trades": len(winning_trades),
@@ -457,7 +448,7 @@ async def get_profitability_stats():
         "best_trade_usdt": round(best_trade, 4),
         "worst_trade_usdt": round(worst_trade, 4),
         "profit_factor": round(profit_factor, 2) if profit_factor != float('inf') else "∞",
-        "win_rate_pct": round(len(winning_trades) / total_trades * 100, 1) if total_trades > 0 else 0
+        "win_rate_pct": round(len(winning_trades) / len(realized) * 100, 1) if realized else 0
     }
 
 if __name__ == "__main__":

@@ -126,6 +126,24 @@ def sf(val, default=0.0):
         return default
 
 
+def extract_balances_payload(payload) -> list:
+    """Normalize known balance response schemas to a flat list."""
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ("balances", "data", "result", "wallet", "assets"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            nested = value.get("balances")
+            if isinstance(nested, list):
+                return nested
+    return []
+
+
 def get_asset_totals(balances, asset: str) -> float:
     """Normalize balance schema variants and avoid double counting.
 
@@ -274,9 +292,12 @@ async def api_portfolio():
     data_warning = None
 
     if "error" not in balances_result:
-        bl = balances_result.get("balances", balances_result) if isinstance(balances_result, dict) else balances_result
+        bl = extract_balances_payload(balances_result)
         mewc = get_asset_totals(bl, "MEWC")
         usdt = get_asset_totals(bl, "USDT")
+
+        if mewc == 0 and usdt == 0 and bl:
+            data_warning = "Detected unsupported balance schema; values may be incomplete"
     else:
         err = balances_result.get("error") if isinstance(balances_result, dict) else str(balances_result)
         print(f"⚠️ Balances API error: {err}")
@@ -294,11 +315,18 @@ async def api_portfolio():
 
     data_store.add_snapshot(total)
 
+    mewc_r = round(mewc, 2)
+    usdt_r = round(usdt, 2)
+    mewc_val_r = round(mewc_val, 2)
+    total_r = round(total, 2)
+    component_total_r = round(mewc_val_r + usdt_r, 2)
+
     return {
-        "mewc_balance": round(mewc, 2),
-        "mewc_value_usdt": round(mewc_val, 2),
-        "usdt_balance": round(usdt, 2),
-        "total_value_usdt": round(total, 2),
+        "mewc_balance": mewc_r,
+        "mewc_value_usdt": mewc_val_r,
+        "usdt_balance": usdt_r,
+        "total_value_usdt": component_total_r,
+        "raw_total_value_usdt": total_r,
         "mewc_percentage": round((mewc_val / total * 100), 2) if total > 0 else 0,
         "data_source": data_source,
         "data_warning": data_warning,
@@ -316,7 +344,14 @@ async def api_pnl_saldo():
         hist = data_store.get_portfolio_history(2)
         if not hist:
             return {"pnl": 0, "start_value": 0, "current_value": 0, "change_pct": 0}
-        start = next((h["total_value_usdt"] for h in hist if datetime.fromisoformat(h["timestamp"]) >= reset), hist[0]["total_value_usdt"])
+        before_reset = [h for h in hist if datetime.fromisoformat(h["timestamp"]) <= reset]
+        after_reset = [h for h in hist if datetime.fromisoformat(h["timestamp"]) > reset]
+        if before_reset:
+            start = before_reset[-1]["total_value_usdt"]
+        elif after_reset:
+            start = after_reset[0]["total_value_usdt"]
+        else:
+            start = hist[0]["total_value_usdt"]
         curr = hist[-1]["total_value_usdt"]
         pct = ((curr - start) / start * 100) if start > 0 else 0
         return {"pnl": round(curr - start, 2), "start_value": round(start, 2), "current_value": round(curr, 2), "change_pct": round(pct, 2)}

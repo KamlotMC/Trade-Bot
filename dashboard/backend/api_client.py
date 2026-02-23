@@ -1,4 +1,4 @@
-"""NonKYC API Client - FIXED with correct endpoints"""
+"""NonKYC API Client."""
 import hmac, hashlib, time, requests, json
 from typing import Optional, Dict
 from pathlib import Path
@@ -31,7 +31,6 @@ class NonKYCClient:
         """Make API request with proper error handling"""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         
-        # Build query string for signature
         query_params = params or {}
         query_string = "&".join(f"{k}={v}" for k, v in sorted(query_params.items()))
         full_url = f"{url}?{query_string}" if query_string else url
@@ -68,13 +67,12 @@ class NonKYCClient:
         return {"error": "All balance endpoints failed"}
     
     def get_my_trades(self, symbol: str = "MEWC_USDT", limit: int = 50) -> Dict:
-        """Get my trades - FIXED with correct NonKYC endpoints"""
-        # Try different endpoint variations with correct symbol format
-        symbol_no_underscore = symbol.replace("_", "")  # MEWCUSDT
+        """Get my trades."""
+        symbol_no_underscore = symbol.replace("_", "")
         
         endpoints_to_try = [
-            ("account/trades", {"symbol": symbol, "limit": limit}),  # MEWC_USDT
-            ("account/trades", {"symbol": symbol_no_underscore, "limit": limit}),  # MEWCUSDT
+            ("account/trades", {"symbol": symbol, "limit": limit}),
+            ("account/trades", {"symbol": symbol_no_underscore, "limit": limit}),
             ("myTrades", {"symbol": symbol, "limit": limit}),
             ("myTrades", {"symbol": symbol_no_underscore, "limit": limit}),
             ("user/trades", {"symbol": symbol, "limit": limit}),
@@ -84,7 +82,6 @@ class NonKYCClient:
         for endpoint, params in endpoints_to_try:
             result = self._request("GET", endpoint, params=params, signed=True)
             if "error" not in result:
-                # Handle different response formats
                 if isinstance(result, list):
                     return {"trades": result}
                 elif isinstance(result, dict) and "trades" in result:
@@ -99,3 +96,60 @@ class NonKYCClient:
     
     def get_open_orders(self, symbol: str = "MEWC_USDT") -> Dict:
         return self._request("GET", "account/orders", params={"symbol": symbol.replace("_", "")}, signed=True)
+
+    def get_orderbook(self, symbol: str = "MEWC_USDT", limit: int = 20) -> Dict:
+        symbol_no_underscore = symbol.replace("_", "")
+        for params in ({"symbol": symbol_no_underscore, "limit": limit}, {"symbol": symbol, "limit": limit}):
+            result = self._request("GET", "market/orderbook", params=params, signed=False)
+            if "error" not in result:
+                return result
+        return {"error": "Orderbook endpoint failed"}
+
+    def cancel_order(self, order_id: str) -> Dict:
+        endpoints_to_try = [
+            ("POST", "cancelorder", {"id": order_id}),
+            ("POST", "cancelOrder", {"id": order_id}),
+            ("DELETE", f"account/orders/{order_id}", None),
+        ]
+        for method, endpoint, params in endpoints_to_try:
+            result = self._request(method, endpoint, params=params, signed=True)
+            if "error" not in result:
+                return result
+        return {"error": f"Failed to cancel order {order_id}"}
+
+    def create_market_order(self, side: str, quantity: float, symbol: str = "MEWC_USDT") -> Dict:
+        normalized_side = side.upper()
+        symbol_no_underscore = symbol.replace("_", "")
+        payloads = [
+            {"symbol": symbol_no_underscore, "side": normalized_side, "type": "market", "quantity": quantity},
+            {"symbol": symbol_no_underscore, "side": normalized_side, "type": "MARKET", "qty": quantity},
+            {"symbol": symbol, "side": normalized_side, "type": "market", "quantity": quantity},
+        ]
+        for payload in payloads:
+            result = self._request("POST", "createorder", params=payload, signed=True)
+            if "error" not in result:
+                return result
+        return {"error": "Failed to create market order"}
+
+
+    def create_limit_order(self, side: str, quantity: float, price: float, symbol: str = "MEWC_USDT") -> Dict:
+        normalized_side = side.upper()
+        symbol_no_underscore = symbol.replace("_", "")
+        payloads = [
+            {"symbol": symbol_no_underscore, "side": normalized_side, "type": "limit", "quantity": quantity, "price": price},
+            {"symbol": symbol_no_underscore, "side": normalized_side, "type": "LIMIT", "qty": quantity, "rate": price},
+            {"symbol": symbol, "side": normalized_side, "type": "limit", "quantity": quantity, "price": price},
+        ]
+        for payload in payloads:
+            result = self._request("POST", "createorder", params=payload, signed=True)
+            if "error" not in result:
+                return result
+        return {"error": "Failed to create limit order"}
+
+    def cancel_all_orders(self, symbol: str = "MEWC_USDT") -> Dict:
+        symbol_no_underscore = symbol.replace("_", "")
+        for payload in ({"symbol": symbol_no_underscore}, {"symbol": symbol}):
+            result = self._request("POST", "cancelallorders", params=payload, signed=True)
+            if "error" not in result:
+                return result
+        return {"error": "Failed to cancel all orders"}

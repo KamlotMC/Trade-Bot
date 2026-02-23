@@ -87,6 +87,50 @@ Press `Ctrl+C` to gracefully shut down (all orders will be cancelled).
 
 ---
 
+
+## Trading Center Dashboard
+
+The project includes a web dashboard (FastAPI + HTML/JS) that works as a **Trading Center** with tabs:
+
+- Overview
+- Trading (manual order panel)
+- Risk (risk cockpit)
+- Automation (rule engine)
+- Execution (quality + lifecycle)
+- Backtest (summary)
+- Journal (strategy trace)
+
+### Start the dashboard
+
+```bash
+python -m uvicorn dashboard.web.app:app --host 0.0.0.0 --port 8000
+```
+
+Then open: `http://localhost:8000`
+
+### Key dashboard endpoints
+
+- `POST /api/orders/manual`
+- `POST /api/orders/cancel-all`
+- `GET /api/open-orders`
+- `POST /api/open-orders/{order_id}/cancel`
+- `GET /api/orderbook`
+- `POST /api/trades/{trade_id}/close`
+- `GET /api/risk-cockpit`
+- `GET /api/automation-rules`
+- `POST /api/automation-rules`
+- `GET /api/execution-quality`
+- `GET /api/order-lifecycle`
+- `GET /api/backtest-replay-summary`
+- `GET /api/strategy-journal`
+
+### Testing
+
+```bash
+python -m compileall -q .
+pytest -q
+```
+
 ## Architecture
 
 ```
@@ -178,4 +222,3 @@ This bot uses the [NonKYC REST API v2](https://api.nonkyc.io/):
 ## License
 
 MIT License. See [LEGAL_NOTICE.md](LEGAL_NOTICE.md) for full terms and risk disclosures.
-# Trade-Bot

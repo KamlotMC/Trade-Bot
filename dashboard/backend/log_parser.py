@@ -126,3 +126,45 @@ class LogParser:
             print(f"Log parser error: {e}")
         
         return orders
+
+    def get_order_lifecycle(self, lines: int = 400) -> List[Dict]:
+        """Return recent order lifecycle events (placed/cancel)."""
+        if not self.log_path.exists():
+            return []
+
+        events: List[Dict] = []
+        try:
+            with open(self.log_path, 'r') as f:
+                log_lines = f.readlines()[-lines:]
+
+            for line in log_lines:
+                ts_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|', line)
+                ts = ts_match.group(1) if ts_match else ""
+
+                placed = re.search(r'PLACED\s+(BUY|SELL)\s+L(\d+)\s+price=([\d.]+)\s+qty=([\d.]+)\s+id=([a-zA-Z0-9_-]+)', line)
+                if placed:
+                    side, level, price, qty, oid = placed.groups()
+                    events.append({
+                        "timestamp": ts,
+                        "event": "placed",
+                        "order_id": oid,
+                        "side": side,
+                        "level": int(level),
+                        "price": float(price),
+                        "quantity": float(qty),
+                    })
+                    continue
+
+                canceled = re.search(r'CANCEL ORDER\s+id=([a-zA-Z0-9_-]+)', line)
+                if canceled:
+                    oid = canceled.group(1)
+                    events.append({
+                        "timestamp": ts,
+                        "event": "canceled",
+                        "order_id": oid,
+                    })
+
+        except Exception as e:
+            print(f"Log parser error: {e}")
+
+        return events[-80:]

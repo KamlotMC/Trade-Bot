@@ -14,6 +14,12 @@ strategy:
   refresh_interval_sec: 90       # 90s zamiast 25s - WIĘCEJ CZASU NA FILLE!
   order_type: "limit"
   min_bid_price: 0.000008
+  adaptive_spread_enabled: true
+  volatility_lookback: 12
+  trend_lookback: 8
+  queue_reprice_threshold_pct: 0.002
+  imbalance_skew_enabled: true
+  session_schedule_enabled: false
 
 risk:
   max_mewc_exposure: 1500000.0
@@ -26,6 +32,9 @@ risk:
   max_open_orders: 4
   min_profit_after_fees_pct: 0.006
   max_slippage_pct: 0.02
+  intraday_max_consecutive_losses: 4
+  inventory_band_low: 0.40
+  inventory_band_high: 0.70
 
 logging:
   level: "INFO"

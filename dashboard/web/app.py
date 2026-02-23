@@ -404,6 +404,11 @@ async def api_bot_status():
 async def api_open_orders():
     return log_parser.get_open_orders_from_logs(200)
 
+
+@app.get("/api/order-lifecycle")
+async def api_order_lifecycle():
+    return log_parser.get_order_lifecycle(500)
+
 @app.get("/api/errors")
 async def api_errors():
     return log_parser.get_errors(200)
@@ -481,6 +486,16 @@ async def api_execution_quality():
     positive = [p for p in realized if p > 0]
     negative = [p for p in realized if p < 0]
 
+    # Basic realized spread capture proxy from SELL fills.
+    spread_capture = [p for p in realized]
+
+    # Anomaly alerts.
+    alerts = []
+    if fills_total == 0:
+        alerts.append("No fills in selected period")
+    if sell_fills >= 5 and len(negative) / sell_fills > 0.7:
+        alerts.append("High adverse selection: >70% negative realized SELL fills")
+
     return {
         "fills_total": fills_total,
         "sell_fills_with_realized_pnl": sell_fills,
@@ -488,7 +503,54 @@ async def api_execution_quality():
         "negative_sell_fills": len(negative),
         "avg_realized_pnl_per_sell_usdt": round(sum(realized) / sell_fills, 6) if sell_fills else 0,
         "median_like_realized_pnl_usdt": round(sorted(realized)[sell_fills // 2], 6) if sell_fills else 0,
+        "realized_spread_capture_usdt": round(sum(spread_capture), 6),
+        "fill_to_post_ratio": 0,  # placeholder until post count comes from lifecycle aggregation
+        "avg_fill_latency_sec": None,  # requires exchange-side order event timestamps
+        "post_fill_adverse_move_pct": None,  # requires tick series around fill time
+        "alerts": alerts,
         "methodology": "Realized FIFO PnL (fees included per fill)",
+    }
+
+
+@app.get("/api/live-risk")
+async def api_live_risk():
+    """Live risk widget payload from latest balances + config bands."""
+    balances_result = api_client.get_balances()
+    if "error" in balances_result:
+        return {
+            "inventory_ratio": 0,
+            "target_ratio": 0.6,
+            "band_low": 0.4,
+            "band_high": 0.7,
+            "current_skew": 0,
+            "risk_halted": False,
+            "risk_reason": balances_result.get("error"),
+        }
+
+    bl = balances_result.get("balances", balances_result) if isinstance(balances_result, dict) else balances_result
+    mewc = get_asset_totals(bl, "MEWC")
+    usdt = get_asset_totals(bl, "USDT")
+    pd = get_price_data() or {"last_price": 0}
+    mid = sf(pd.get("last_price"))
+    mewc_val = mewc * mid
+    total = mewc_val + usdt
+    ratio = (mewc_val / total) if total > 0 else 0
+
+    # Mirror current config defaults for dashboard risk bands.
+    target = 0.6
+    band_low = 0.4
+    band_high = 0.7
+    skew = ((ratio - target) / max(target, 1 - target, 1e-9)) if total > 0 else 0
+    skew = max(min(skew, 1), -1)
+
+    return {
+        "inventory_ratio": round(ratio, 4),
+        "target_ratio": target,
+        "band_low": band_low,
+        "band_high": band_high,
+        "current_skew": round(skew, 4),
+        "risk_halted": False,
+        "risk_reason": "",
     }
 
 if __name__ == "__main__":

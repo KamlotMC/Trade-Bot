@@ -364,7 +364,7 @@ async def sync_trades():
     added = 0
     existing = data_store.get_trades(10000, 365)
     existing_keys = {
-        (str(t.get("order_id") or ""), str(t.get("side") or ""), float(sf(t.get("quantity"))), float(sf(t.get("price"))))
+        (str(t.get("order_id") or ""), str(t.get("side") or ""), float(sf(t.get("quantity"))), float(sf(t.get("price"))), str(t.get("timestamp") or ""))
         for t in existing
     }
 
@@ -379,8 +379,9 @@ async def sync_trades():
         qty = sf(f.get('qty') or f.get('quantity'))
         prc = sf(f.get('price'))
         fee = sf(f.get('commission') or f.get('fee'))
+        ts = str(f.get('timestamp') or f.get('time') or f.get('createdAt') or "")
 
-        key = (dedup_id, side, float(qty), float(prc))
+        key = (dedup_id, side, float(qty), float(prc), ts)
         if key in existing_keys:
             continue
         

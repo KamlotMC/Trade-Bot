@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MEWC Trading Center</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -110,6 +110,8 @@
     .modal-card { width:min(92vw,560px); background:#101010; border:1px solid rgba(255,149,0,.4); border-radius:10px; padding:18px; }
     .modal-actions { margin-top:12px; display:flex; justify-content:flex-end; gap:8px; }
     .small-muted { color:#777; font-size:.82em; margin-bottom:8px; }
+    .chart-wrap { position:relative; width:100%; height:320px; }
+    .chart-wrap canvas { width:100% !important; height:100% !important; }
     .toast {
       position:fixed;
       right:16px;
@@ -186,7 +188,7 @@
     </div>
     <div class="grid row-3">
       <div class="card"><h2>Open Orders</h2><div id="ordersList" class="scroll-box"></div></div>
-      <div class="card"><h2>Portfolio Chart</h2><canvas id="portfolioChart"></canvas></div>
+      <div class="card"><h2>Portfolio Chart</h2><div class="chart-wrap"><canvas id="portfolioChart"></canvas></div></div>
     </div>
     <div class="grid row-3">
       <div class="card"><h2>Orderbook Ladder</h2><div id="orderbookLadder" class="ladder"></div></div>
@@ -259,7 +261,7 @@
         <div class="stat"><span class="stat-label">Fees</span><span id="liveFees" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Net</span><span id="liveNetProfit" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Profit factor</span><span id="livePf" class="stat-value">-</span></div>
-        <canvas id="intradayCurve" height="110"></canvas>
+        <div class="chart-wrap"><canvas id="intradayCurve"></canvas></div>
       </div>
     </div>
   </section>
@@ -347,6 +349,8 @@
 
   <script>
     let chart = null, intradayChart = null, countdown = 5, lastConn = false;
+    let isUpdating = false, pendingUpdate = false;
+    let portfolioHistHash = null, intradayHash = null;
     let pnlFilter = "today";
     let currentOrders = [], currentTrades = [];
 
@@ -500,6 +504,40 @@
       priceInput.style.opacity = enabled ? '1' : '.55';
     }
 
+
+    function stableHash(values){
+      try { return JSON.stringify(values); } catch (_) { return String(values?.length || 0); }
+    }
+
+    const chartOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      normalized: true,
+      parsing: false,
+      plugins: {
+        legend: { display: false },
+        decimation: { enabled: true, algorithm: 'lttb', samples: 120 }
+      },
+      scales: { x: { ticks: { color: '#666', maxTicksLimit: 8 } }, y: { ticks: { color: '#666', maxTicksLimit: 8 } } }
+    };
+
+    function upsertLineChart(chartRef, canvasId, labels, data, borderColor, fillColor){
+      const canvas = document.getElementById(canvasId);
+      if(!canvas) return chartRef;
+      if(!chartRef){
+        return new Chart(canvas, {
+          type:'line',
+          data:{ labels, datasets:[{ data, borderColor, backgroundColor:fillColor, fill:Boolean(fillColor), pointRadius:0, tension:.35 }]},
+          options: chartOptions
+        });
+      }
+      chartRef.data.labels = labels;
+      chartRef.data.datasets[0].data = data;
+      chartRef.update('none');
+      return chartRef;
+    }
+
     function closeModal(){ document.getElementById('detailsModal').classList.remove('open'); document.getElementById('modalActionBtn').style.display='none'; }
     function openModal(title, bodyHtml){ document.getElementById('modalTitle').innerHTML=title; document.getElementById('modalBody').innerHTML=bodyHtml; document.getElementById('detailsModal').classList.add('open'); }
 
@@ -518,7 +556,9 @@
       btn.onclick = async()=>{ await api('/api/trades/'+encodeURIComponent(t.id)+'/close', {method:'POST'}); closeModal(); update(); };
     }
 
-    async function update(){
+    async function update(force = false){
+      if (isUpdating){ pendingUpdate = true; return; }
+      isUpdating = true;
       try {
         const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability, execq, orderbook, risk, lifecycle, rules, backtest, journal, livePnl, lifeMetrics, reasonTrace] = await Promise.all([
           api('/api/price'), api('/api/portfolio'), api('/api/pnl'), api('/api/pnl-saldo'), api('/api/win-rate'), api('/api/fills'),
@@ -527,7 +567,7 @@
         ]);
 
         if (p){ document.getElementById('price').textContent = price(p.last_price); document.getElementById('bid').textContent=price(p.bid); document.getElementById('ask').textContent=price(p.ask); document.getElementById('volume').textContent=fmt(p.usd_volume_est,0)+' USDT'; const cv=parseFloat(p.change_percent)||0; const ch=document.getElementById('priceChange'); ch.textContent=(cv>=0?'+':'')+p.change_percent+'%'; ch.className=cv>=0?'positive':'negative'; }
-        if (pf){ document.getElementById('mewcBalance').textContent=fmtInt(pf.mewc_balance); document.getElementById('mewcValue').textContent=fmt(pf.mewc_value_usdt,2)+' USDT'; document.getElementById('usdtBalance').textContent=fmt(pf.usdt_balance,2); document.getElementById('usdtValue').textContent=fmt(pf.usdt_balance,2)+' USDT'; document.getElementById('totalValue').textContent=fmt(pf.total_value_usdt,2)+' USDT'; }
+        if (pf){ document.getElementById('mewcBalance').textContent=fmtInt(pf.mewc_balance); document.getElementById('mewcValue').textContent=fmt(pf.mewc_value_usdt,2)+' USDT'; document.getElementById('usdtBalance').textContent=fmt(pf.usdt_balance,2); document.getElementById('usdtValue').textContent=fmt(pf.usdt_balance,2)+' USDT'; const total = Number.isFinite(Number(pf.total_value_usdt)) ? pf.total_value_usdt : ((pf.mewc_value_usdt||0)+(pf.usdt_balance||0)); document.getElementById('totalValue').textContent=fmt(total,2)+' USDT'; }
         if (pnlSaldo){ const v=pnlSaldo.pnl||0; const el=document.getElementById('portfolioPnL'); el.textContent=(v>=0?'+':'')+fmt(v,2)+' USDT'; el.className='stat-value '+(v>=0?'positive':'negative'); }
         if (wr){ document.getElementById('winRate').textContent=wr.win_rate+'%'; document.getElementById('totalTrades').textContent=wr.total; }
         if (pnl){ ['daily','weekly','monthly'].forEach(period=>{ const d=pnl[period]||{}; const val=d.net||0; const el=document.getElementById('pnl'+period.charAt(0).toUpperCase()+period.slice(1)); if(el) el.textContent=(val>=0?'+':'')+fmt(val,2)+' USDT'; const tEl=document.getElementById('trades'+period.charAt(0).toUpperCase()+period.slice(1)); if(tEl) tEl.textContent=d.trades||0; }); }
@@ -542,10 +582,10 @@
 
         if (orderbook){ const my = new Set(currentOrders.map(o=>Number(o.price).toFixed(8))); const asks=(orderbook.asks||[]).slice(0,10).reverse(); const bids=(orderbook.bids||[]).slice(0,10); const rows=asks.map(a=>({...a,side:'ask'})).concat(bids.map(b=>({...b,side:'bid'}))); document.getElementById('orderbookLadder').innerHTML = rows.map(r=>`<div class='ladder-row ${r.side} ${my.has(Number(r.price).toFixed(8))?'mine':''}'><span>${price(r.price)}</span><span>${fmtInt(r.quantity)} MEWC</span></div>`).join(''); }
 
-        if (hist && hist.length){ if(chart) chart.destroy(); chart = new Chart(document.getElementById('portfolioChart'), { type:'line', data:{ labels:hist.map(h=>new Date(h.timestamp).toLocaleDateString()), datasets:[{ data:hist.map(h=>h.total_value_usdt), borderColor:'#ff9500', backgroundColor:'rgba(255,149,0,.1)', fill:true, pointRadius:0, tension:.35 }]}, options:{ plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#666'}}, y:{ticks:{color:'#666'}} } } }); }
+        if (hist && hist.length){ const labels = hist.map(h=>new Date(h.timestamp).toLocaleDateString()); const values = hist.map(h=>h.total_value_usdt); const nextHash = stableHash([labels, values]); if (force || nextHash !== portfolioHistHash){ portfolioHistHash = nextHash; chart = upsertLineChart(chart, 'portfolioChart', labels, values, '#ff9500', 'rgba(255,149,0,.1)'); } }
 
         if (profitability){ document.getElementById('livePf').textContent=profitability.profit_factor; }
-        if (livePnl){ document.getElementById('liveUnrealized').textContent=(livePnl.unrealized_usdt>=0?'+':'')+fmt(livePnl.unrealized_usdt,4)+' USDT'; document.getElementById('liveRealized').textContent=(livePnl.realized_usdt>=0?'+':'')+fmt(livePnl.realized_usdt,4)+' USDT'; document.getElementById('liveFees').textContent=fmt(livePnl.fees_usdt,4)+' USDT'; document.getElementById('liveNetProfit').textContent=(livePnl.net_usdt>=0?'+':'')+fmt(livePnl.net_usdt,4)+' USDT'; if(livePnl.equity_curve && livePnl.equity_curve.length){ if(intradayChart) intradayChart.destroy(); intradayChart = new Chart(document.getElementById('intradayCurve'), {type:'line', data:{labels:livePnl.equity_curve.map(x=>normalizeTime(x.timestamp)), datasets:[{data:livePnl.equity_curve.map(x=>x.equity), borderColor:'#8f7dff', pointRadius:0, tension:.3}]}, options:{plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#666'}}, y:{ticks:{color:'#666'}}}}}); } }
+        if (livePnl){ document.getElementById('liveUnrealized').textContent=(livePnl.unrealized_usdt>=0?'+':'')+fmt(livePnl.unrealized_usdt,4)+' USDT'; document.getElementById('liveRealized').textContent=(livePnl.realized_usdt>=0?'+':'')+fmt(livePnl.realized_usdt,4)+' USDT'; document.getElementById('liveFees').textContent=fmt(livePnl.fees_usdt,4)+' USDT'; document.getElementById('liveNetProfit').textContent=(livePnl.net_usdt>=0?'+':'')+fmt(livePnl.net_usdt,4)+' USDT'; if(livePnl.equity_curve && livePnl.equity_curve.length){ const labels = livePnl.equity_curve.map(x=>normalizeTime(x.timestamp)); const values = livePnl.equity_curve.map(x=>x.equity); const nextHash = stableHash([labels, values]); if (force || nextHash !== intradayHash){ intradayHash = nextHash; intradayChart = upsertLineChart(intradayChart, 'intradayCurve', labels, values, '#8f7dff'); } } }
         if (risk){ document.getElementById('riskInventory').textContent=fmt(risk.inventory_ratio*100,2)+'%'; document.getElementById('riskTarget').textContent=fmt(risk.target_ratio*100,2)+'%'; document.getElementById('riskSkew').textContent=fmt(risk.current_skew,4); document.getElementById('riskDrawdown').textContent=fmt(risk.session_drawdown_pct ?? risk.drawdown_pct,2)+'%'; document.getElementById('riskDayDd').textContent=fmt(risk.day_drawdown_pct,2)+'%'; document.getElementById('riskWeekDd').textContent=fmt(risk.week_drawdown_pct,2)+'%'; document.getElementById('riskExposure').textContent=fmt(risk.inventory_exposure_pct ?? risk.inventory_ratio*100,2)+'%'; document.getElementById('riskGuard').textContent=risk.hard_limit_guard ? 'ON' : 'OFF'; document.getElementById('riskState').textContent=risk.risk_state||'-'; }
         if (execq){ document.getElementById('execFills').textContent=execq.fills_total; document.getElementById('execPositive').textContent=execq.positive_sell_fills; document.getElementById('execNegative').textContent=execq.negative_sell_fills; document.getElementById('execAvgPnl').textContent=fmt(execq.avg_realized_pnl_per_sell_usdt,6)+' USDT'; }
         if (lifeMetrics){ document.getElementById('execPercentiles').textContent=`${fmt(lifeMetrics.p50_sec,3)}/${fmt(lifeMetrics.p95_sec,3)}/${fmt(lifeMetrics.p99_sec,3)}s`; document.getElementById('execPostAck').textContent=fmt(lifeMetrics.post_to_ack_avg_sec,3)+'s'; document.getElementById('execAckFill').textContent=fmt(lifeMetrics.ack_to_first_fill_avg_sec,3)+'s'; document.getElementById('execLifetime').textContent=fmt(lifeMetrics.total_lifetime_avg_sec,3)+'s'; document.getElementById('execHistogram').innerHTML = (lifeMetrics.histogram||[]).map(h=>`<div class='stat'><span class='stat-label'>${h.bucket}</span><span class='stat-value'>${h.count}</span></div>`).join(''); }
@@ -565,14 +605,19 @@
         }
         updateStatus(true); countdown = 5;
       } catch(e){ console.error('Update error:', e); updateStatus(false); }
+      finally {
+        isUpdating = false;
+        if (pendingUpdate){ pendingUpdate = false; queueMicrotask(()=>update(force)); }
+      }
     }
 
     update();
     syncManualOrderType();
     document.getElementById('manualType').addEventListener('change', syncManualOrderType);
     ['manualQty','manualPrice','manualSide','manualType','manualReduceOnly'].forEach(id=>document.getElementById(id).addEventListener('change', preflightManualOrder));
-    setInterval(update, 5000);
+    setInterval(() => { if (!document.hidden) update(); }, 5000);
     setInterval(updateCountdown, 1000);
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) update(true); });
   </script>
 </body>
 </html>

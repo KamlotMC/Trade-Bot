@@ -1,41 +1,39 @@
-# Audyt błędów i ryzyk (dashboard + strategy.py + config.yaml)
+# Audit of Errors and Risks (dashboard + strategy.py + config.yaml)
 
-Data: 2026-02-23
+## Critical findings
 
-## Krytyczne
+1. **`strategy.py`: fill-detection methods reference undefined symbols (`datetime`, `self.logger`)**  
+   In `_detect_fills_from_balances` and `_save_fill_to_db`, the implementation uses `datetime.now()` and `self.logger`, but the class only uses the module-level logger and does not import `datetime`. If these methods execute, they can raise `NameError` / `AttributeError`.
 
-1. **`strategy.py`: metody detekcji filli używają niezdefiniowanych symboli (`datetime`, `self.logger`)**  
-   W metodach `_detect_fills_from_balances` i `_save_fill_to_db` wykorzystywane są `datetime.now()` oraz `self.logger`, ale klasa importuje tylko modułowy `logger` i nie importuje `datetime`. Jeśli te metody zostaną wywołane, poleci `NameError` / `AttributeError`.
+2. **`dashboard/web/app.py`: potential balance double-counting in `/api/portfolio`**  
+   Balance totals were previously computed from mixed aliases such as `available + locked + held + free`. Most APIs expose `available/free` and `locked/held` as aliases, so summing all variants can overstate balances.
 
-2. **`dashboard/web/app.py`: ryzyko podwójnego liczenia salda w `/api/portfolio`**  
-   Suma salda jest liczona jako `available + locked + held + free`. Różne endpointy zwykle zwracają *alternatywne* nazwy pól (`available/free`, `locked/held`), więc taki sumator może zawyżać saldo 2x.
+3. **`dashboard/web/app.py`: trade deduplication by `order_id` only**  
+   A single order can produce many fills. Deduplication based only on `order_id` can drop valid fills as duplicates.
 
-3. **`dashboard/web/app.py`: deduplikacja trade'ów po `order_id` zamiast po ID transakcji**  
-   W `sync_trades` sprawdzane jest tylko `order_id`. Jeden order może mieć wiele filli, więc część poprawnych wpisów może być odrzucona jako „duplikat”.
+## Important findings
 
-## Wysokie
+4. **`config.yaml` contains fields not consumed by runtime config parsing**  
+   Fields like `inventory_target_ratio`, `min_profit_after_fees_pct`, `max_slippage_pct`, and sections such as `volatility_adapter` / `circuit_breaker` were not fully mapped in `market_maker/config.py` in earlier revisions, creating false expectations.
 
-4. **`config.yaml` zawiera klucze, których kod nie wczytuje**  
-   Pola `inventory_target_ratio`, `min_profit_after_fees_pct`, `max_slippage_pct` oraz sekcje `volatility_adapter` i `circuit_breaker` nie są mapowane w `market_maker/config.py` do dataclassy konfiguracyjnej. Są więc aktualnie ignorowane (fałszywe poczucie, że działają).
+5. **`dashboard/web/app.py`: profitability can be misleading if using stored `pnl` field directly**  
+   Trades are often persisted without precomputed `pnl`; profitability should be based on realized FIFO calculations or explicit accounting.
 
-5. **`dashboard/web/app.py`: `/api/profitability` bazuje na polu `pnl`, które zwykle pozostaje 0**  
-   `DataStore.add_trade(...)` zapisuje trade bez liczenia PnL, a endpoint profitability filtruje po `t.get("pnl", 0)`. Statystyki „profit/loss factor” mogą być mylące, bo często liczone z samych zer.
+6. **`dashboard/web/app.py`: log parsing can distort original event timestamps**  
+   If parser fallback uses current time rather than parsed log timestamp, trade chronology becomes inaccurate.
 
-6. **`dashboard/web/app.py`: parser logów zapisuje bieżący czas zamiast czasu z logu**  
-   W `parse_fills_from_logs()` timestamp trade'a jest ustawiany na `datetime.now()`, przez co historia trade'ów jest czasowo zniekształcona.
+## Medium / technical findings
 
-## Średnie / techniczne
+7. **`dashboard/web/app.py`: `sync_trades` can degrade with large history**  
+   Repeated historical scans and per-row checks can lead to poor scaling without an indexed deduplication strategy.
 
-7. **`dashboard/web/app.py`: `sync_trades` ma złożoność O(n²)**  
-   W pętli po fillach każdorazowo pobiera pełną listę `get_trades(1000, 365)` i robi `any(...)`. Dla większej historii endpoint będzie szybko zwalniał.
+8. **`test_dashboard.py`: historical mismatch with DataStore API**  
+   Older tests used signatures that did not match the current `DataStore.add_snapshot(total_value)` interface.
 
-8. **`test_dashboard.py` jest nieaktualny względem API klasy `DataStore`**  
-   Wywołanie `store.add_snapshot(1000000, 50, 0.000037, 87)` nie zgadza się z sygnaturą `add_snapshot(self, total_value: float)`.
+## Recommended next steps
 
-## Priorytet poprawek (propozycja)
-
-1. Naprawić `strategy.py` (`datetime`, `self.logger`) lub usunąć martwy kod, jeśli nieużywany.  
-2. Poprawić agregację balansu w dashboardzie (znormalizować jeden model pól).  
-3. Wprowadzić poprawną deduplikację filli (np. `trade_id` + `order_id` + timestamp).  
-4. Ujednolicić `config.yaml` z `market_maker/config.py` (albo wdrożyć brakujące pola, albo usunąć z YAML).  
-5. Przerobić `/api/profitability` na liczenie z `calculated_pnl` lub rzeczywistego modelu księgowania.
+1. Harden `strategy.py` imports and logger usage for all paths.
+2. Keep a single normalized balance schema when aggregating portfolio values.
+3. Deduplicate fills using transaction-level identifiers and timestamp context.
+4. Align `config.yaml` with `market_maker/config.py` to avoid ignored settings.
+5. Keep profitability based on realized FIFO/accounting-derived values only.

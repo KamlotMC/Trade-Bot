@@ -1,433 +1,361 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MEWC Market Maker Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #000; color: #fff; padding: 20px; position: relative; min-height: 100vh; }
-        body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid rgba(255, 149, 0, 0.3); pointer-events: none; z-index: 9999; box-shadow: 0 0 40px rgba(255, 149, 0, 0.4), inset 0 0 40px rgba(255, 149, 0, 0.2); animation: borderPulse 3s ease-in-out infinite alternate; }
-        @keyframes borderPulse { 0% { opacity: 0.5; } 100% { opacity: 1; } }
-        .header { text-align: center; margin-bottom: 25px; }
-        .header h1 { font-size: 2em; color: #ff9500; font-weight: 300; letter-spacing: 2px; text-transform: uppercase; }
-        .status-bar { display: inline-flex; gap: 30px; margin-bottom: 15px; padding: 10px 20px; background: rgba(255,149,0,0.05); border-radius: 6px; border: 1px solid rgba(255,149,0,0.2); }
-        .status-item { display: flex; align-items: center; gap: 8px; color: #888; font-size: 0.9em; }
-        .status-indicator { width: 8px; height: 8px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 10px rgba(255,59,48,0.6); animation: pulse 2s ease-in-out infinite; }
-        .status-indicator.live { background: #34c759; box-shadow: 0 0 10px rgba(52,199,89,0.6); }
-        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.9); } }
-        .grid { display: grid; gap: 15px; margin-bottom: 15px; }
-        .row-1 { grid-template-columns: repeat(4, 1fr); }
-        .row-2 { grid-template-columns: repeat(3, 1fr); }
-        .row-3 { grid-template-columns: 1fr 2fr; }
-        .row-4 { grid-template-columns: 2fr 1fr; }
-        .card { background: rgba(255, 149, 0, 0.03); border: 1px solid rgba(255, 149, 0, 0.15); border-radius: 8px; padding: 20px; position: relative; overflow: hidden; transition: all 0.3s ease; }
-        .card:hover { border-color: rgba(255, 149, 0, 0.4); box-shadow: 0 0 30px rgba(255, 149, 0, 0.15); transform: translateY(-2px); }
-        .card h2 { color: #ff9500; font-size: 0.8em; margin-bottom: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
-        .stat { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.85em; }
-        .stat-label { color: #666; }
-        .stat-value { font-weight: 600; color: #ff9500; }
-        .positive { color: #34c759; }
-        .negative { color: #ff3b30; }
-        .price-large { font-size: 2em; font-weight: 300; color: #ff9500; letter-spacing: 1px; }
-        .portfolio-item { text-align: center; padding: 15px 0; border-bottom: 1px solid rgba(255, 149, 0, 0.1); }
-        .portfolio-item:last-child { border-bottom: none; }
-        .portfolio-amount { font-size: 1.8em; font-weight: 300; color: #fff; }
-        .portfolio-value { font-size: 0.85em; color: #666; margin-top: 5px; }
-        .portfolio-label { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; color: #ff9500; font-size: 0.85em; text-transform: uppercase; }
-        .coin-icon { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7em; font-weight: bold; }
-        .coin-icon.mewc { background: linear-gradient(135deg, #ff6b00, #ff9500); }
-        .coin-icon.usdt { background: linear-gradient(135deg, #26a17b, #00c896); }
-        .pnl-card { text-align: center; }
-        .pnl-card.positive { border-color: rgba(52, 199, 89, 0.4); box-shadow: 0 0 30px rgba(52, 199, 89, 0.15); }
-        .pnl-card.negative { border-color: rgba(255, 59, 48, 0.4); box-shadow: 0 0 30px rgba(255, 59, 48, 0.15); }
-        .pnl-value { font-size: 2em; font-weight: 300; margin: 15px 0; }
-        .order-item { padding: 10px; margin: 6px 0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; background: rgba(0,0,0,0.4); }
-        .order-item.buy { border-left: 2px solid #34c759; }
-        .order-item.sell { border-left: 2px solid #ff3b30; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-        th { color: #ff9500; padding: 10px; text-align: left; border-bottom: 1px solid rgba(255,149,0,0.3); }
-        td { padding: 8px 10px; border-bottom: 1px solid rgba(255,149,0,0.1); }
-        .buy { color: #34c759; }
-        .sell { color: #ff3b30; }
-        #portfolioChart { max-height: 250px; }
-        .error-box { background: rgba(255, 59, 48, 0.1); border-left: 2px solid #ff3b30; padding: 8px; margin: 6px 0; border-radius: 4px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MEWC Trading Center</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#000; color:#fff; padding:20px; min-height:100vh; }
+    .header { text-align:center; margin-bottom:18px; }
+    .header h1 { color:#ff9500; font-weight:300; letter-spacing:2px; text-transform:uppercase; }
+    .status-bar { display:inline-flex; gap:30px; margin:10px 0 14px; padding:10px 20px; background:rgba(255,149,0,0.05); border:1px solid rgba(255,149,0,.2); border-radius:6px; }
+    .status-item { display:flex; gap:8px; align-items:center; color:#888; font-size:.9em; }
+    .status-indicator { width:8px; height:8px; border-radius:50%; background:#ff3b30; }
+    .status-indicator.live { background:#34c759; }
+
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .tab-btn { border:1px solid rgba(255,149,0,.3); background:rgba(255,149,0,.06); color:#ff9500; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:.85em; }
+    .tab-btn.active { background:rgba(255,149,0,.2); border-color:#ff9500; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+
+    .grid { display:grid; gap:15px; margin-bottom:15px; }
+    .row-1 { grid-template-columns:repeat(4,1fr); }
+    .row-2 { grid-template-columns:repeat(3,1fr); }
+    .row-3 { grid-template-columns:1fr 2fr; }
+    .row-4 { grid-template-columns:2fr 1fr; }
+    .row-2-even { grid-template-columns:1fr 1fr; }
+
+    .card { background:rgba(255,149,0,.03); border:1px solid rgba(255,149,0,.15); border-radius:8px; padding:18px; }
+    .card h2 { color:#ff9500; font-size:.82em; margin-bottom:12px; text-transform:uppercase; letter-spacing:1px; }
+    .stat { display:flex; justify-content:space-between; padding:6px 0; font-size:.86em; }
+    .stat-label { color:#707070; }
+    .stat-value { color:#ff9500; font-weight:600; }
+    .positive { color:#34c759; }
+    .negative { color:#ff3b30; }
+    .price-large { font-size:2em; color:#ff9500; font-weight:300; }
+
+    .portfolio-item { text-align:center; border-bottom:1px solid rgba(255,149,0,.1); padding:12px 0; }
+    .portfolio-item:last-child { border-bottom:none; }
+    .portfolio-label { display:flex; gap:8px; justify-content:center; align-items:center; color:#ff9500; font-size:.85em; text-transform:uppercase; }
+    .portfolio-amount { font-size:1.7em; }
+    .portfolio-value { color:#777; font-size:.85em; margin-top:5px; }
+    .coin-icon { width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; overflow:hidden; }
+    .coin-icon.mewc { background:linear-gradient(135deg,#ff6b00,#ff9500); }
+    .coin-icon.usdt { background:#26a17b; }
+
+    .order-item { padding:10px; margin:6px 0; border-radius:4px; display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,.4); font-size:.85em; cursor:pointer; }
+    .order-item.buy { border-left:2px solid #34c759; }
+    .order-item.sell { border-left:2px solid #ff3b30; }
+    .trade-row:hover, .order-item:hover { background:rgba(255,149,0,.08); }
+    .scroll-box { max-height:300px; overflow-y:auto; padding-right:4px; }
+
+    table { width:100%; border-collapse:collapse; font-size:.85em; }
+    th { color:#ff9500; border-bottom:1px solid rgba(255,149,0,.3); text-align:left; padding:8px; }
+    td { border-bottom:1px solid rgba(255,149,0,.08); padding:8px; }
+
+    .ladder { display:grid; gap:4px; max-height:280px; overflow:auto; }
+    .ladder-row { display:flex; justify-content:space-between; background:rgba(0,0,0,.35); border-radius:4px; padding:6px 8px; font-size:.8em; }
+    .ladder-row.ask { border-left:2px solid #ff3b30; }
+    .ladder-row.bid { border-left:2px solid #34c759; }
+    .ladder-row.mine { box-shadow:0 0 0 1px #ff9500 inset; }
+
+    .input, select { width:100%; margin-top:8px; margin-bottom:10px; padding:8px; border:1px solid rgba(255,149,0,.3); background:#0f0f0f; color:#fff; border-radius:6px; }
+    .btn { border:1px solid rgba(255,149,0,.4); background:rgba(255,149,0,.08); color:#ff9500; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    .btn.danger { border-color:rgba(255,59,48,.6); color:#ff3b30; background:rgba(255,59,48,.1); }
+
+    .details-modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:1000; }
+    .details-modal.open { display:flex; }
+    .modal-card { width:min(92vw,560px); background:#101010; border:1px solid rgba(255,149,0,.4); border-radius:10px; padding:18px; }
+    .modal-actions { margin-top:12px; display:flex; justify-content:flex-end; gap:8px; }
+    .small-muted { color:#777; font-size:.82em; margin-bottom:8px; }
+  </style>
 </head>
 <body>
-    <div class="header">
-        <div class="status-bar">
-            <div class="status-item">
-                <div id="statusIndicator" class="status-indicator"></div>
-                <span id="statusText">OFFLINE</span>
-            </div>
-            <div class="status-item">
-                <span>Odświeżanie za:</span>
-                <span id="countdown" style="color: #ff9500; font-weight: 600;">5s</span>
-            </div>
-        </div>
-        <h1>MEWC Market Maker</h1>
+  <div class="header">
+    <div class="status-bar">
+      <div class="status-item"><div id="statusIndicator" class="status-indicator"></div><span id="statusText">OFFLINE</span></div>
+      <div class="status-item"><span>Refresh:</span><span id="countdown" style="color:#ff9500;font-weight:600;">5s</span></div>
     </div>
+    <h1>MEWC Trading Center</h1>
+  </div>
 
+  <div class="tabs" id="tabsNav">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="trading">Trading</button>
+    <button class="tab-btn" data-tab="risk">Risk</button>
+    <button class="tab-btn" data-tab="automation">Automation</button>
+    <button class="tab-btn" data-tab="execution">Execution</button>
+    <button class="tab-btn" data-tab="backtest">Backtest</button>
+    <button class="tab-btn" data-tab="journal">Journal</button>
+  </div>
+
+  <section id="tab-overview" class="tab-panel active">
     <div class="grid row-1">
-        <div class="card">
-            <h2><i class="fas fa-chart-line"></i> Cena MEWC</h2>
-            <div class="price-large" id="price">-</div>
-            <div id="priceChange" style="margin: 10px 0; font-size: 0.9em;">-</div>
-            <div class="stat"><span class="stat-label">Bid</span><span class="stat-value" id="bid">-</span></div>
-            <div class="stat"><span class="stat-label">Ask</span><span class="stat-value" id="ask">-</span></div>
-            <div class="stat"><span class="stat-label">24h Volume</span><span class="stat-value" id="volume">-</span></div>
+      <div class="card">
+        <h2><i class="fas fa-chart-line"></i> MEWC Price</h2>
+        <div class="price-large" id="price">-</div>
+        <div id="priceChange" style="margin:10px 0;font-size:.9em;">-</div>
+        <div class="stat"><span class="stat-label">Bid</span><span class="stat-value" id="bid">-</span></div>
+        <div class="stat"><span class="stat-label">Ask</span><span class="stat-value" id="ask">-</span></div>
+        <div class="stat"><span class="stat-label">24h Volume</span><span class="stat-value" id="volume">-</span></div>
+      </div>
+      <div class="card">
+        <h2><i class="fas fa-wallet"></i> Portfolio</h2>
+        <div class="portfolio-item">
+          <div class="portfolio-label"><span class="coin-icon mewc"><svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="12" fill="url(#mewg)"/><defs><linearGradient id="mewg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ff6b00"/><stop offset="100%" stop-color="#ff9500"/></linearGradient></defs><path d="M6 15V9l3 3 3-3 3 3 3-3v6" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>MEWC</div>
+          <div class="portfolio-amount" id="mewcBalance">-</div>
+          <div class="portfolio-value" id="mewcValue">-</div>
         </div>
-
-        <div class="card">
-            <h2><i class="fas fa-wallet"></i> Portfel</h2>
-            <div class="portfolio-item">
-                <div class="portfolio-label"><span class="coin-icon mewc">M</span>MEWC</div>
-                <div class="portfolio-amount" id="mewcBalance">-</div>
-                <div class="portfolio-value" id="mewcValue">-</div>
-            </div>
-            <div class="portfolio-item">
-                <div class="portfolio-label"><span class="coin-icon usdt">T</span>USDT</div>
-                <div class="portfolio-amount" id="usdtBalance">-</div>
-                <div class="portfolio-value" id="usdtValue">-</div>
-            </div>
-            <div class="stat" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,149,0,0.2);">
-                <span class="stat-label">Total Value</span>
-                <span class="stat-value" id="totalValue">-</span>
-            </div>
-            <div class="stat" style="padding-top: 8px;">
-                <span class="stat-label">P&L (od 7:00)</span>
-                <span class="stat-value" id="portfolioPnL">-</span>
-            </div>
-            <div class="stat" style="padding-top: 8px;">
-                <span class="stat-label">Źródło danych</span>
-                <span class="stat-value" id="portfolioSource">-</span>
-            </div>
-            <div class="stat" style="padding-top: 6px;">
-                <span class="stat-label">Uwaga</span>
-                <span class="stat-value" id="portfolioWarning" style="font-size:0.8em;">-</span>
-            </div>
+        <div class="portfolio-item">
+          <div class="portfolio-label"><span class="coin-icon usdt"><svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="12" fill="#26a17b"/><path d="M6 8h12M9 8v2.2c1 .7 5 .7 6 0V8M12 10.2V16" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>USDT</div>
+          <div class="portfolio-amount" id="usdtBalance">-</div>
+          <div class="portfolio-value" id="usdtValue">-</div>
         </div>
-
-        <div class="card">
-            <h2><i class="fas fa-robot"></i> Status Bota</h2>
-            <div class="stat"><span class="stat-label">Cykl</span><span class="stat-value" id="botCycle">-</span></div>
-            <div class="stat"><span class="stat-label">Mid Price</span><span class="stat-value" id="botMid">-</span></div>
-            <div class="stat"><span class="stat-label">Skew</span><span class="stat-value" id="botSkew">-</span></div>
-            <div class="stat"><span class="stat-label">Bidy/Aski</span><span class="stat-value" id="botOrders">-</span></div>
-        </div>
-
-        <div class="card pnl-card">
-            <h2><i class="fas fa-trophy"></i> Win Rate</h2>
-            <div class="pnl-value" id="winRate">-</div>
-            <div class="stat"><span class="stat-label">Total Trades</span><span class="stat-value" id="totalTrades">-</span></div>
-        </div>
+        <div class="stat"><span class="stat-label">Total Value</span><span id="totalValue" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">P&L (since 7:00)</span><span id="portfolioPnL" class="stat-value">-</span></div>
+      </div>
+      <div class="card" id="pnlDailyCard"><h2>Daily P&L</h2><div id="pnlDaily" class="price-large">-</div><div class="stat"><span class="stat-label">Trades</span><span id="tradesDaily" class="stat-value">-</span></div></div>
+      <div class="card"><h2>Win Rate</h2><div id="winRate" class="price-large">-</div><div class="stat"><span class="stat-label">Total</span><span id="totalTrades" class="stat-value">-</span></div></div>
     </div>
-
-    <div class="grid row-2">
-        <div class="card pnl-card" id="pnlDailyCard">
-            <h2><i class="fas fa-calendar-day"></i> P&L Dzienny</h2>
-            <div class="pnl-value" id="pnlDaily">-</div>
-            <div class="stat"><span class="stat-label">Trades</span><span class="stat-value" id="tradesDaily">-</span></div>
-        </div>
-        <div class="card pnl-card" id="pnlWeeklyCard">
-            <h2><i class="fas fa-calendar-week"></i> P&L Tygodniowy</h2>
-            <div class="pnl-value" id="pnlWeekly">-</div>
-            <div class="stat"><span class="stat-label">Trades</span><span class="stat-value" id="tradesWeekly">-</span></div>
-        </div>
-        <div class="card pnl-card" id="pnlMonthlyCard">
-            <h2><i class="fas fa-calendar-alt"></i> P&L Miesięczny</h2>
-            <div class="pnl-value" id="pnlMonthly">-</div>
-            <div class="stat"><span class="stat-label">Trades</span><span class="stat-value" id="tradesMonthly">-</span></div>
-        </div>
-    </div>
-
     <div class="grid row-3">
-        <div class="card">
-            <h2><i class="fas fa-list"></i> Otwarte Ordery</h2>
-            <div id="ordersList"></div>
-        </div>
-        <div class="card">
-            <h2><i class="fas fa-chart-area"></i> Wykres Portfela</h2>
-            <canvas id="portfolioChart"></canvas>
-        </div>
+      <div class="card"><h2>Open Orders</h2><div id="ordersList" class="scroll-box"></div></div>
+      <div class="card"><h2>Portfolio Chart</h2><canvas id="portfolioChart"></canvas></div>
     </div>
-
-    <div class="grid row-4">
-        <div class="card">
-            <h2><i class="fas fa-exchange-alt"></i> Ostatnie Trade'y</h2>
-            <table>
-                <thead><tr><th>Time</th><th>Side</th><th>Qty</th><th>Price</th><th>P&L</th></tr></thead>
-                <tbody id="tradesTable"></tbody>
-            </table>
-        </div>
-        <div class="card">
-            <h2><i class="fas fa-exclamation-triangle"></i> Błędy</h2>
-            <div id="errorsList"></div>
-        </div>
+    <div class="grid row-3">
+      <div class="card"><h2>Orderbook Ladder</h2><div id="orderbookLadder" class="ladder"></div></div>
+      <div class="card"><h2>Errors</h2><div id="errorsList" class="scroll-box"></div></div>
     </div>
+  </section>
 
-    <script>
-        let chart = null, countdown = 5, lastConn = false;
-
-        // Format functions with proper decimal places
-        function fmt(n, d=2) { 
-            if (n === null || n === undefined || isNaN(n)) return '-'; 
-            return Number(n).toLocaleString('pl-PL', {minimumFractionDigits: d, maximumFractionDigits: d}); 
-        }
-        function fmtInt(n) { 
-            if (n === null || n === undefined || isNaN(n)) return '-'; 
-            return Number(n).toLocaleString('pl-PL'); 
-        }
-        function price(n) { 
-            if (n === null || n === undefined || isNaN(n)) return '-'; 
-            return Number(n).toFixed(8); 
-        }
-
-        function updateCountdown() { countdown = (countdown - 1 + 6) % 6; document.getElementById('countdown').textContent = countdown + 's'; }
-        
-        function updateStatus(on) {
-            const i = document.getElementById('statusIndicator'), t = document.getElementById('statusText');
-            if (on !== lastConn) {
-                lastConn = on;
-                i.className = 'status-indicator' + (on ? ' live' : '');
-                t.textContent = on ? 'LIVE' : 'OFFLINE';
-            }
-        }
-
-        async function api(url) { 
-            try { 
-                const r = await fetch(url); 
-                if (!r.ok) throw new Error(r.status); 
-                return await r.json(); 
-            } catch (e) { 
-                console.error(`API error ${url}:`, e);
-                return null; 
-            } 
-        }
-
-        async function update() {
-            console.log('🔄 Dashboard update...');
-            console.log('🔄 Dashboard update started...');
-            try {
-                // Fetch all data with individual error handling
-                const fetchData = async (url) => {
-                    try {
-                        const r = await fetch(url);
-                        if (!r.ok) throw new Error(r.status);
-                        return await r.json();
-                    } catch (e) {
-                        console.error(`Error fetching ${url}:`, e);
-                        return null;
-                    }
-                };
-
-                const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability, execq] = await Promise.all([
-                    api('/api/price'), api('/api/portfolio'), api('/api/pnl'),
-                    api('/api/pnl-saldo'), api('/api/win-rate'), api('/api/fills'),
-                    api('/api/history'), api('/api/open-orders-logs'),
-                    api('/api/errors'), api('/api/bot-status'),
-                    api('/api/profitability'), api('/api/execution-quality')
-                ]);
-
-                // Price
-                if (p) {
-                    document.getElementById('price').textContent = price(p.last_price);
-                    document.getElementById('bid').textContent = price(p.bid);
-                    document.getElementById('ask').textContent = price(p.ask);
-                    const ch = document.getElementById('priceChange');
-                    const changeVal = parseFloat(p.change_percent) || 0;
-                    ch.textContent = (changeVal >= 0 ? '+' : '') + p.change_percent + '%';
-                    ch.className = changeVal >= 0 ? 'positive' : 'negative';
-                    document.getElementById('volume').textContent = fmt(p.usd_volume_est, 0) + ' USDT';
-                }
-
-                // Portfolio
-                if (pf) {
-                    document.getElementById('mewcBalance').textContent = fmtInt(pf.mewc_balance);
-                    document.getElementById('mewcValue').textContent = fmt(pf.mewc_value_usdt, 2) + ' USDT';
-                    document.getElementById('usdtBalance').textContent = fmt(pf.usdt_balance, 2);
-                    document.getElementById('usdtValue').textContent = fmt(pf.usdt_balance, 2) + ' USDT';
-                    document.getElementById('totalValue').textContent = fmt(pf.total_value_usdt, 2) + ' USDT';
-                    document.getElementById('portfolioSource').textContent = pf.data_source || 'exchange';
-                    document.getElementById('portfolioWarning').textContent = pf.data_warning || 'brak';
-                    
-                    if (pnlSaldo) {
-                        const pnlEl = document.getElementById('portfolioPnL');
-                        const val = pnlSaldo.pnl || 0;
-                        pnlEl.textContent = (val >= 0 ? '+' : '') + fmt(val, 2) + ' USDT';
-                        pnlEl.className = 'stat-value ' + (val >= 0 ? 'positive' : 'negative');
-                    }
-                }
-
-                // Bot Status
-                if (bot) {
-                    document.getElementById('botCycle').textContent = bot.last_cycle || '-';
-                    document.getElementById('botMid').textContent = price(bot.last_mid_price);
-                    document.getElementById('botSkew').textContent = (bot.last_skew !== null && bot.last_skew !== undefined) ? Number(bot.last_skew).toFixed(4) : '-';
-                    document.getElementById('botOrders').textContent = (bot.active_bids || 0) + '/' + (bot.active_asks || 0);
-                }
-
-                // P&L sections
-                if (pnl) {
-                    ['daily', 'weekly', 'monthly'].forEach(period => {
-                        const d = pnl[period] || {};
-                        const el = document.getElementById('pnl' + period.charAt(0).toUpperCase() + period.slice(1));
-                        const card = document.getElementById('pnl' + period.charAt(0).toUpperCase() + period.slice(1) + 'Card');
-                        const val = d.net || 0;
-                        const trades = d.trades || 0;
-                        
-                        el.textContent = (val >= 0 ? '+' : '') + fmt(val, 2) + ' USDT';
-                        el.className = 'pnl-value ' + (val >= 0 ? 'positive' : 'negative');
-                        card.className = 'card pnl-card' + (val >= 0 ? ' positive' : ' negative');
-                        document.getElementById('trades' + period.charAt(0).toUpperCase() + period.slice(1)).textContent = trades;
-                    });
-                }
-
-                // Win Rate
-                if (wr) {
-                    document.getElementById('winRate').textContent = wr.win_rate + '%';
-                    document.getElementById('totalTrades').textContent = wr.total;
-                }
-
-                // Orders
-                const ol = document.getElementById('ordersList');
-                if (orders && orders.length > 0) {
-                    ol.innerHTML = orders.slice(0, 5).map(o => 
-                        '<div class="order-item ' + o.side.toLowerCase() + '">' +
-                        '<strong>' + o.side.toUpperCase() + '</strong>' +
-                        '<span>' + fmtInt(o.quantity) + ' MEWC</span>' +
-                        '<span style="color:#ff9500">' + price(o.price) + ' USDT</span>' +
-                        '</div>'
-                    ).join('');
-                } else {
-                    ol.innerHTML = '<p style="color:#666">Brak orderów</p>';
-                }
-
-                // Trades with calculated P&L
-                const tb = document.getElementById('tradesTable');
-                if (!fills || fills.length === 0) {
-                    tb.innerHTML = '<tr><td colspan="5" style="color:#666">Brak trade\'ów</td></tr>';
-                } else {
-                    tb.innerHTML = fills.slice(0, 10).map(t => {
-                        const pnlVal = t.calculated_pnl !== null && t.calculated_pnl !== undefined ? t.calculated_pnl : (t.pnl || null);
-                        const pnlCls = pnlVal !== null ? (pnlVal >= 0 ? 'positive' : 'negative') : '';
-                        const pnlTxt = pnlVal !== null ? fmt(pnlVal, 4) : '-';
-                        return '<tr>' +
-                            '<td>' + new Date(t.timestamp).toLocaleTimeString() + '</td>' +
-                            '<td class="' + (t.side || '').toLowerCase() + '">' + (t.side || '').toUpperCase() + '</td>' +
-                            '<td>' + fmtInt(t.quantity) + '</td>' +
-                            '<td>' + price(t.price) + '</td>' +
-                            '<td class="' + pnlCls + '">' + pnlTxt + '</td>' +
-                            '</tr>';
-                    }).join('');
-                }
-
-                // Errors
-                const el = document.getElementById('errorsList');
-                if (errors && errors.length > 0) {
-                    el.innerHTML = errors.slice(0, 5).map(e => '<div class="error-box">' + e + '</div>').join('');
-                } else {
-                    el.innerHTML = '<span style="color:#34c759">Brak błędów</span>';
-                }
-
-                // Chart
-                if (hist && hist.length > 0) {
-                    if (chart) chart.destroy();
-                    chart = new Chart(document.getElementById('portfolioChart'), {
-                        type: 'line',
-                        data: {
-                            labels: hist.map(h => new Date(h.timestamp).toLocaleDateString()),
-                            datasets: [{
-                                data: hist.map(h => h.total_value_usdt),
-                                borderColor: '#ff9500',
-                                backgroundColor: 'rgba(255, 149, 0, 0.1)',
-                                borderWidth: 2,
-                                fill: true,
-                                tension: 0.4,
-                                pointRadius: 0
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: true,
-                            plugins: { legend: { display: false } },
-                            scales: {
-                                x: { grid: { display: false }, ticks: { color: '#666' } },
-                                y: { grid: { color: 'rgba(255, 149, 0, 0.1)' }, ticks: { color: '#666' } }
-                            }
-                        }
-                    });
-                }
-
-                
-                // Fetch profitability stats
-                if (profitability) {
-                    document.getElementById('statTotalTrades').textContent = profitability.total_trades;
-                    document.getElementById('statWinRate').textContent = profitability.win_rate_pct + '%';
-                    document.getElementById('statVolume').textContent = fmt(profitability.total_volume_usdt, 0) + ' USDT';
-                    document.getElementById('statFees').textContent = fmt(profitability.total_fees_usdt, 4) + ' USDT';
-                    document.getElementById('statGrossProfit').textContent = '+' + fmt(profitability.gross_profit_usdt, 4) + ' USDT';
-                    document.getElementById('statNetProfit').textContent = (profitability.net_profit_usdt >= 0 ? '+' : '') + fmt(profitability.net_profit_usdt, 4) + ' USDT';
-                    document.getElementById('statAvgTrade').textContent = fmt(profitability.avg_trade_profit_usdt, 4) + ' USDT';
-                    document.getElementById('statProfitFactor').textContent = profitability.profit_factor;
-                    document.getElementById('statBestTrade').textContent = '+' + fmt(profitability.best_trade_usdt, 4) + ' USDT';
-                    document.getElementById('statWorstTrade').textContent = fmt(profitability.worst_trade_usdt, 4) + ' USDT';
-                    document.getElementById('statMethodology').textContent = profitability.methodology || '-';
-                }
-
-                if (execq) {
-                    document.getElementById('statAvgSellPnl').textContent = fmt(execq.avg_realized_pnl_per_sell_usdt, 6) + ' USDT';
-                    document.getElementById('statPositiveSells').textContent = execq.positive_sell_fills;
-                }
-
-                updateStatus(true);
-                countdown = 5;
-            } catch (e) {
-                console.error('Update error:', e);
-                updateStatus(false);
-            }
-        }
-
-        // Initial update and intervals
-        update();
-        setInterval(update, 5000);
-        setInterval(updateCountdown, 1000);
-    </script>
-
-    <div class="grid row-2" style="margin-top: 15px;">
-        <div class="card">
-            <h2><i class="fas fa-chart-bar"></i> Statystyki Profitability</h2>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85em;">
-                <div class="stat"><span class="stat-label">Total Trades:</span><span class="stat-value" id="statTotalTrades">-</span></div>
-                <div class="stat"><span class="stat-label">Win Rate:</span><span class="stat-value" id="statWinRate">-</span></div>
-                <div class="stat"><span class="stat-label">Volume:</span><span class="stat-value" id="statVolume">-</span></div>
-                <div class="stat"><span class="stat-label">Total Fees:</span><span class="stat-value" id="statFees">-</span></div>
-                <div class="stat"><span class="stat-label">Gross Profit:</span><span class="stat-value positive" id="statGrossProfit">-</span></div>
-                <div class="stat"><span class="stat-label">Net Profit:</span><span class="stat-value" id="statNetProfit">-</span></div>
-                <div class="stat"><span class="stat-label">Avg Trade:</span><span class="stat-value" id="statAvgTrade">-</span></div>
-                <div class="stat"><span class="stat-label">Profit Factor:</span><span class="stat-value" id="statProfitFactor">-</span></div>
-                <div class="stat"><span class="stat-label">Avg SELL PnL:</span><span class="stat-value" id="statAvgSellPnl">-</span></div>
-                <div class="stat"><span class="stat-label">Positive SELL fills:</span><span class="stat-value" id="statPositiveSells">-</span></div>
-                <div class="stat" style="grid-column: span 2;"><span class="stat-label">Metodologia:</span><span class="stat-value" id="statMethodology">-</span></div>
-            </div>
+  <section id="tab-trading" class="tab-panel">
+    <div class="grid row-2-even">
+      <div class="card">
+        <h2><i class="fas fa-terminal"></i> Manual Order Panel</h2>
+        <select id="manualSide"><option>BUY</option><option>SELL</option></select>
+        <select id="manualType"><option>MARKET</option><option>LIMIT</option></select>
+        <input id="manualQty" class="input" type="number" step="0.0001" placeholder="Quantity" />
+        <input id="manualPrice" class="input" type="number" step="0.00000001" placeholder="Limit price (only for LIMIT)" />
+        <div style="display:flex;gap:8px;">
+          <button class="btn" onclick="submitManualOrder()">Submit order</button>
+          <button class="btn danger" onclick="cancelAllOrders()">Cancel all</button>
         </div>
-        <div class="card">
-            <h2><i class="fas fa-trophy"></i> Najlepsze/Najgorsze Trade'y</h2>
-            <div style="font-size: 0.85em;">
-                <div class="stat" style="padding: 10px 0; border-bottom: 1px solid rgba(255,149,0,0.1);">
-                    <span class="stat-label">🏆 Best Trade:</span>
-                    <span class="stat-value positive" id="statBestTrade">-</span>
-                </div>
-                <div class="stat" style="padding: 10px 0;">
-                    <span class="stat-label">📉 Worst Trade:</span>
-                    <span class="stat-value negative" id="statWorstTrade">-</span>
-                </div>
-            </div>
+        <div id="manualOrderResult" class="small-muted" style="margin-top:10px;"></div>
+      </div>
+      <div class="card">
+        <h2><i class="fas fa-exchange-alt"></i> Ostatnie Trade'y</h2>
+        <div class="small-muted">Click a trade to view details and close position.</div>
+        <div class="scroll-box">
+          <table>
+            <thead><tr><th>Time</th><th>Side</th><th>Qty</th><th>Price</th><th>P&L</th></tr></thead>
+            <tbody id="tradesTable"></tbody>
+          </table>
         </div>
+      </div>
     </div>
+  </section>
 
+  <section id="tab-risk" class="tab-panel">
+    <div class="grid row-2-even">
+      <div class="card">
+        <h2><i class="fas fa-shield-alt"></i> Risk Cockpit</h2>
+        <div class="stat"><span class="stat-label">Inventory ratio</span><span id="riskInventory" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Target ratio</span><span id="riskTarget" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Skew</span><span id="riskSkew" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Drawdown</span><span id="riskDrawdown" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Risk state</span><span id="riskState" class="stat-value">-</span></div>
+      </div>
+      <div class="card">
+        <h2><i class="fas fa-chart-line"></i> Live PnL / Equity</h2>
+        <div class="stat"><span class="stat-label">Net profit</span><span id="liveNetProfit" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Gross profit</span><span id="liveGrossProfit" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Fees</span><span id="liveFees" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Profit factor</span><span id="livePf" class="stat-value">-</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-automation" class="tab-panel">
+    <div class="grid row-2-even">
+      <div class="card">
+        <h2><i class="fas fa-bolt"></i> Rules</h2>
+        <div id="automationRules" class="scroll-box"></div>
+      </div>
+      <div class="card">
+        <h2><i class="fas fa-plus"></i> Add rule</h2>
+        <input id="ruleName" class="input" placeholder="Nazwa" />
+        <input id="ruleCondition" class="input" placeholder="Warunek (np. spread_pct > 0.7)" />
+        <input id="ruleAction" class="input" placeholder="Akcja (np. pause_quotes)" />
+        <button class="btn" onclick="addAutomationRule()">Dodaj</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-execution" class="tab-panel">
+    <div class="grid row-2-even">
+      <div class="card">
+        <h2><i class="fas fa-tachometer-alt"></i> Execution Quality</h2>
+        <div class="stat"><span class="stat-label">Fills total</span><span id="execFills" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Positive sells</span><span id="execPositive" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Negative sells</span><span id="execNegative" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Avg realized pnl</span><span id="execAvgPnl" class="stat-value">-</span></div>
+      </div>
+      <div class="card">
+        <h2><i class="fas fa-project-diagram"></i> Order Lifecycle</h2>
+        <div id="lifecycleList" class="scroll-box"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-backtest" class="tab-panel">
+    <div class="card">
+      <h2><i class="fas fa-vial"></i> Backtest & Replay Summary</h2>
+      <div class="stat"><span class="stat-label">Dataset</span><span id="btDataset" class="stat-value">-</span></div>
+      <div class="stat"><span class="stat-label">Simulated trades</span><span id="btTrades" class="stat-value">-</span></div>
+      <div class="stat"><span class="stat-label">Net PnL</span><span id="btPnl" class="stat-value">-</span></div>
+      <div class="stat"><span class="stat-label">Profit factor</span><span id="btPf" class="stat-value">-</span></div>
+      <div class="stat"><span class="stat-label">Max drawdown</span><span id="btDd" class="stat-value">-</span></div>
+      <div class="stat"><span class="stat-label">Replay ready</span><span id="btReady" class="stat-value">-</span></div>
+    </div>
+  </section>
+
+  <section id="tab-journal" class="tab-panel">
+    <div class="card">
+      <h2><i class="fas fa-book"></i> Strategy Journal (AI/Strategy Trace)</h2>
+      <div id="journalList" class="scroll-box"></div>
+    </div>
+  </section>
+
+  <div id="detailsModal" class="details-modal">
+    <div class="modal-card">
+      <h2 id="modalTitle">Details</h2>
+      <div id="modalBody"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Close</button>
+        <button id="modalActionBtn" class="btn danger" style="display:none;">Akcja</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let chart = null, countdown = 5, lastConn = false;
+    let currentOrders = [], currentTrades = [];
+
+    function fmt(n, d=2){ if(n===null||n===undefined||isNaN(n)) return '-'; return Number(n).toLocaleString('pl-PL',{minimumFractionDigits:d, maximumFractionDigits:d}); }
+    function fmtInt(n){ if(n===null||n===undefined||isNaN(n)) return '-'; return Number(n).toLocaleString('pl-PL'); }
+    function price(n){ if(n===null||n===undefined||isNaN(n)) return '-'; return Number(n).toFixed(8); }
+
+    document.querySelectorAll('.tab-btn').forEach(btn=>btn.addEventListener('click', ()=>setTab(btn.dataset.tab)));
+    function setTab(name){
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+      document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id===`tab-${name}`));
+    }
+
+    function updateCountdown(){ countdown = (countdown - 1 + 6) % 6; document.getElementById('countdown').textContent = countdown + 's'; }
+    function updateStatus(on){
+      const i=document.getElementById('statusIndicator'), t=document.getElementById('statusText');
+      if(on!==lastConn){ lastConn=on; i.className='status-indicator'+(on?' live':''); t.textContent=on?'LIVE':'OFFLINE'; }
+    }
+
+    async function api(url, options={}){
+      try { const r = await fetch(url, options); if(!r.ok) throw new Error(r.status); return await r.json(); }
+      catch(e){ console.error(`API error ${url}:`, e); return null; }
+    }
+
+    async function submitManualOrder(){
+      const payload = {
+        side: document.getElementById('manualSide').value,
+        type: document.getElementById('manualType').value,
+        quantity: Number(document.getElementById('manualQty').value),
+        price: Number(document.getElementById('manualPrice').value)
+      };
+      const res = await api('/api/orders/manual', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      document.getElementById('manualOrderResult').textContent = res ? JSON.stringify(res).slice(0,180) : 'Order submission error';
+      update();
+    }
+
+    async function cancelAllOrders(){
+      const res = await api('/api/orders/cancel-all', {method:'POST'});
+      document.getElementById('manualOrderResult').textContent = res ? JSON.stringify(res).slice(0,180) : 'Cancel-all error';
+      update();
+    }
+
+    async function addAutomationRule(){
+      const payload = {
+        name: document.getElementById('ruleName').value,
+        condition: document.getElementById('ruleCondition').value,
+        action: document.getElementById('ruleAction').value,
+      };
+      await api('/api/automation-rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      document.getElementById('ruleName').value=''; document.getElementById('ruleCondition').value=''; document.getElementById('ruleAction').value='';
+      update();
+    }
+
+    function closeModal(){ document.getElementById('detailsModal').classList.remove('open'); document.getElementById('modalActionBtn').style.display='none'; }
+    function openModal(title, bodyHtml){ document.getElementById('modalTitle').innerHTML=title; document.getElementById('modalBody').innerHTML=bodyHtml; document.getElementById('detailsModal').classList.add('open'); }
+
+    function showOrderDetails(idx){
+      const o = currentOrders[idx]; if(!o) return;
+      openModal('Order details', `<div class='stat'><span class='stat-label'>ID</span><span class='stat-value'>${o.id||'-'}</span></div><div class='stat'><span class='stat-label'>Side</span><span class='stat-value'>${o.side||'-'}</span></div><div class='stat'><span class='stat-label'>Qty</span><span class='stat-value'>${fmtInt(o.quantity)}</span></div><div class='stat'><span class='stat-label'>Price</span><span class='stat-value'>${price(o.price)}</span></div>`);
+      const btn=document.getElementById('modalActionBtn'); btn.style.display='inline-block'; btn.textContent='Cancel order';
+      btn.onclick = async()=>{ await api('/api/open-orders/'+encodeURIComponent(o.id)+'/cancel', {method:'POST'}); closeModal(); update(); };
+    }
+
+    function showTradeDetails(idx){
+      const t = currentTrades[idx]; if(!t) return;
+      const pnlVal = t.calculated_pnl!==null&&t.calculated_pnl!==undefined ? t.calculated_pnl : (t.pnl||null);
+      openModal('Trade details', `<div class='stat'><span class='stat-label'>Trade ID</span><span class='stat-value'>${t.id||'-'}</span></div><div class='stat'><span class='stat-label'>Side</span><span class='stat-value'>${t.side||'-'}</span></div><div class='stat'><span class='stat-label'>Qty</span><span class='stat-value'>${fmtInt(t.quantity)}</span></div><div class='stat'><span class='stat-label'>P&L</span><span class='stat-value'>${pnlVal!==null?fmt(pnlVal,4):'-'}</span></div>`);
+      const btn=document.getElementById('modalActionBtn'); btn.style.display='inline-block'; btn.textContent='Close position';
+      btn.onclick = async()=>{ await api('/api/trades/'+encodeURIComponent(t.id)+'/close', {method:'POST'}); closeModal(); update(); };
+    }
+
+    async function update(){
+      try {
+        const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability, execq, orderbook, risk, lifecycle, rules, backtest, journal] = await Promise.all([
+          api('/api/price'), api('/api/portfolio'), api('/api/pnl'), api('/api/pnl-saldo'), api('/api/win-rate'), api('/api/fills'),
+          api('/api/history'), api('/api/open-orders'), api('/api/errors'), api('/api/bot-status'), api('/api/profitability'), api('/api/execution-quality'),
+          api('/api/orderbook'), api('/api/risk-cockpit'), api('/api/order-lifecycle'), api('/api/automation-rules'), api('/api/backtest-replay-summary'), api('/api/strategy-journal')
+        ]);
+
+        if (p){ document.getElementById('price').textContent = price(p.last_price); document.getElementById('bid').textContent=price(p.bid); document.getElementById('ask').textContent=price(p.ask); document.getElementById('volume').textContent=fmt(p.usd_volume_est,0)+' USDT'; const cv=parseFloat(p.change_percent)||0; const ch=document.getElementById('priceChange'); ch.textContent=(cv>=0?'+':'')+p.change_percent+'%'; ch.className=cv>=0?'positive':'negative'; }
+        if (pf){ document.getElementById('mewcBalance').textContent=fmtInt(pf.mewc_balance); document.getElementById('mewcValue').textContent=fmt(pf.mewc_value_usdt,2)+' USDT'; document.getElementById('usdtBalance').textContent=fmt(pf.usdt_balance,2); document.getElementById('usdtValue').textContent=fmt(pf.usdt_balance,2)+' USDT'; document.getElementById('totalValue').textContent=fmt(pf.total_value_usdt,2)+' USDT'; }
+        if (pnlSaldo){ const v=pnlSaldo.pnl||0; const el=document.getElementById('portfolioPnL'); el.textContent=(v>=0?'+':'')+fmt(v,2)+' USDT'; el.className='stat-value '+(v>=0?'positive':'negative'); }
+        if (wr){ document.getElementById('winRate').textContent=wr.win_rate+'%'; document.getElementById('totalTrades').textContent=wr.total; }
+        if (pnl){ ['daily','weekly','monthly'].forEach(period=>{ const d=pnl[period]||{}; const val=d.net||0; const el=document.getElementById('pnl'+period.charAt(0).toUpperCase()+period.slice(1)); if(el) el.textContent=(val>=0?'+':'')+fmt(val,2)+' USDT'; const tEl=document.getElementById('trades'+period.charAt(0).toUpperCase()+period.slice(1)); if(tEl) tEl.textContent=d.trades||0; }); }
+
+        currentOrders = Array.isArray(orders)?orders:[];
+        document.getElementById('ordersList').innerHTML = currentOrders.length ? currentOrders.map((o,idx)=>`<div class='order-item ${(o.side||'').toLowerCase()}' onclick='showOrderDetails(${idx})'><strong>${(o.side||'').toUpperCase()}</strong><span>${fmtInt(o.remaining||o.quantity)} MEWC</span><span style='color:#ff9500'>${price(o.price)} USDT</span></div>`).join('') : '<span style="color:#777">No open orders</span>';
+
+        currentTrades = Array.isArray(fills)?fills:[];
+        document.getElementById('tradesTable').innerHTML = currentTrades.length ? currentTrades.map((t,idx)=>{ const pnlVal=t.calculated_pnl!==null&&t.calculated_pnl!==undefined?t.calculated_pnl:(t.pnl||null); const pnlCls=pnlVal!==null?(pnlVal>=0?'positive':'negative'):''; return `<tr class='trade-row' onclick='showTradeDetails(${idx})'><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td class='${(t.side||'').toLowerCase()}'>${(t.side||'').toUpperCase()}</td><td>${fmtInt(t.quantity)}</td><td>${price(t.price)}</td><td class='${pnlCls}'>${pnlVal!==null?fmt(pnlVal,4):'-'}</td></tr>`; }).join('') : '<tr><td colspan="5" style="color:#777">No trades</td></tr>';
+
+        document.getElementById('errorsList').innerHTML = errors && errors.length ? errors.slice(0,8).map(e=>`<div class='stat'><span class='stat-label'>•</span><span class='stat-value'>${e}</span></div>`).join('') : '<span style="color:#34c759">No errors</span>';
+
+        if (orderbook){ const my = new Set(currentOrders.map(o=>Number(o.price).toFixed(8))); const asks=(orderbook.asks||[]).slice(0,10).reverse(); const bids=(orderbook.bids||[]).slice(0,10); const rows=asks.map(a=>({...a,side:'ask'})).concat(bids.map(b=>({...b,side:'bid'}))); document.getElementById('orderbookLadder').innerHTML = rows.map(r=>`<div class='ladder-row ${r.side} ${my.has(Number(r.price).toFixed(8))?'mine':''}'><span>${price(r.price)}</span><span>${fmtInt(r.quantity)} MEWC</span></div>`).join(''); }
+
+        if (hist && hist.length){ if(chart) chart.destroy(); chart = new Chart(document.getElementById('portfolioChart'), { type:'line', data:{ labels:hist.map(h=>new Date(h.timestamp).toLocaleDateString()), datasets:[{ data:hist.map(h=>h.total_value_usdt), borderColor:'#ff9500', backgroundColor:'rgba(255,149,0,.1)', fill:true, pointRadius:0, tension:.35 }]}, options:{ plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#666'}}, y:{ticks:{color:'#666'}} } } }); }
+
+        if (profitability){ document.getElementById('liveNetProfit').textContent=(profitability.net_profit_usdt>=0?'+':'')+fmt(profitability.net_profit_usdt,4)+' USDT'; document.getElementById('liveGrossProfit').textContent='+'+fmt(profitability.gross_profit_usdt,4)+' USDT'; document.getElementById('liveFees').textContent=fmt(profitability.total_fees_usdt,4)+' USDT'; document.getElementById('livePf').textContent=profitability.profit_factor; }
+        if (risk){ document.getElementById('riskInventory').textContent=fmt(risk.inventory_ratio*100,2)+'%'; document.getElementById('riskTarget').textContent=fmt(risk.target_ratio*100,2)+'%'; document.getElementById('riskSkew').textContent=fmt(risk.current_skew,4); document.getElementById('riskDrawdown').textContent=fmt(risk.drawdown_pct,2)+'%'; document.getElementById('riskState').textContent=risk.risk_state||'-'; }
+        if (execq){ document.getElementById('execFills').textContent=execq.fills_total; document.getElementById('execPositive').textContent=execq.positive_sell_fills; document.getElementById('execNegative').textContent=execq.negative_sell_fills; document.getElementById('execAvgPnl').textContent=fmt(execq.avg_realized_pnl_per_sell_usdt,6)+' USDT'; }
+
+        document.getElementById('lifecycleList').innerHTML = lifecycle && lifecycle.length ? lifecycle.slice(0,50).map(i=>`<div class='stat'><span class='stat-label'>${i.event||'-'}</span><span class='stat-value'>${i.order_id||'-'} @ ${i.price||'-'}</span></div>`).join('') : '<span style="color:#777">No lifecycle events</span>';
+        document.getElementById('automationRules').innerHTML = rules && rules.length ? rules.map(r=>`<div class='stat'><span class='stat-label'>${r.name}</span><span class='stat-value'>${r.condition} → ${r.action}</span></div>`).join('') : '<span style="color:#777">No rules</span>';
+
+        if (backtest){ document.getElementById('btDataset').textContent=backtest.dataset; document.getElementById('btTrades').textContent=backtest.simulated_trades; document.getElementById('btPnl').textContent=fmt(backtest.net_pnl_usdt,4)+' USDT'; document.getElementById('btPf').textContent=backtest.profit_factor; document.getElementById('btDd').textContent=fmt(backtest.max_drawdown_pct,2)+'%'; document.getElementById('btReady').textContent=backtest.replay_ready?'yes':'no'; }
+        document.getElementById('journalList').innerHTML = journal && journal.length ? journal.map(j=>`<div class='stat'><span class='stat-label'>${j.timestamp||''}</span><span class='stat-value'>${j.message||''}</span></div>`).join('') : '<span style="color:#777">No journal entries</span>';
+
+        if (bot){ }
+        updateStatus(true); countdown = 5;
+      } catch(e){ console.error('Update error:', e); updateStatus(false); }
+    }
+
+    update();
+    setInterval(update, 5000);
+    setInterval(updateCountdown, 1000);
+  </script>
 </body>
 </html>

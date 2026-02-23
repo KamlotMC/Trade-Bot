@@ -5,13 +5,13 @@ exchange:
   fee_taker_pct: 0.002
 
 strategy:
-  spread_pct: 0.010              # 1.0% spread
+  spread_pct: 0.010
   min_spread_pct: 0.008
   num_levels: 2
   level_step_pct: 0.005
   base_quantity: 35000.0
   quantity_multiplier: 1.0
-  refresh_interval_sec: 90       # 90s zamiast 25s - WIĘCEJ CZASU NA FILLE!
+  refresh_interval_sec: 90
   order_type: "limit"
   min_bid_price: 0.000008
   adaptive_spread_enabled: true

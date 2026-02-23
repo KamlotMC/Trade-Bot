@@ -285,10 +285,13 @@ class MarketMakerGUI:
             ("max_mewc_exposure", "Max MEWC Exposure"),
             ("max_usdt_exposure", "Max USDT Exposure"),
             ("inventory_skew_factor", "Inventory Skew Factor"),
+            ("inventory_target_ratio", "Inventory Target Ratio (e.g. 60 = 60%)"),
             ("max_balance_usage_pct", "Max Balance Usage (e.g. 80 = 80%)"),
             ("stop_loss_usdt", "Stop Loss (USDT)"),
             ("max_open_orders", "Max Open Orders"),
             ("daily_loss_limit_usdt", "Daily Loss Limit (USDT)"),
+            ("min_profit_after_fees_pct", "Min Profit After Fees (e.g. 0.6 = 0.6%)"),
+            ("max_slippage_pct", "Max Slippage (e.g. 2 = 2%)"),
         ]
         for i, (key, label) in enumerate(risk_fields):
             var = tk.StringVar()
@@ -325,6 +328,9 @@ class MarketMakerGUI:
             "strategy.level_step_pct",
             "strategy.min_spread_pct",
             "risk.max_balance_usage_pct",
+            "risk.inventory_target_ratio",
+            "risk.min_profit_after_fees_pct",
+            "risk.max_slippage_pct",
         }
 
         self.api_key_var.set(self.config.exchange.api_key or "")
@@ -345,10 +351,13 @@ class MarketMakerGUI:
             "risk.max_mewc_exposure": str(r.max_mewc_exposure),
             "risk.max_usdt_exposure": str(r.max_usdt_exposure),
             "risk.inventory_skew_factor": str(r.inventory_skew_factor),
+            "risk.inventory_target_ratio": str(r.inventory_target_ratio),
             "risk.max_balance_usage_pct": str(r.max_balance_usage_pct),
             "risk.stop_loss_usdt": str(r.stop_loss_usdt),
             "risk.max_open_orders": str(r.max_open_orders),
             "risk.daily_loss_limit_usdt": str(r.daily_loss_limit_usdt),
+            "risk.min_profit_after_fees_pct": str(r.min_profit_after_fees_pct),
+            "risk.max_slippage_pct": str(r.max_slippage_pct),
         }
         for key, val in values.items():
             if key in self.setting_vars:
@@ -578,6 +587,15 @@ class MarketMakerGUI:
                     "console": True,
                     "max_file_size_mb": 10,
                     "backup_count": 5,
+                },
+                "volatility_adapter": {
+                    "enabled": False,
+                },
+                "circuit_breaker": {
+                    "enabled": True,
+                    "crash_threshold_pct": 20.0,
+                    "time_window_minutes": 3,
+                    "pause_duration_sec": 90,
                 },
             }
             for key, var in self.setting_vars.items():

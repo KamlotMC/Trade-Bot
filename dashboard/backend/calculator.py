@@ -1,6 +1,5 @@
 """P&L calculations."""
 from typing import Dict, List
-from datetime import datetime, timedelta
 
 class PnLCalculator:
     def __init__(self, data_store):
@@ -54,8 +53,28 @@ class PnLCalculator:
     def get_portfolio_value(self, balances_response: List, mewc_price: float) -> Dict:
         """Calculate portfolio value from balances."""
         try:
-            mewc = sum(b.get("available", 0) + b.get("held", 0) for b in balances_response if b.get("asset") == "MEWC")
-            usdt = sum(b.get("available", 0) + b.get("held", 0) for b in balances_response if b.get("asset") == "USDT")
+            def _f(v, default=0.0):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return default
+
+            def _asset_total(asset: str) -> float:
+                total = 0.0
+                for b in balances_response:
+                    if b.get("asset") != asset:
+                        continue
+                    # Treat free/available and locked/held as aliases.
+                    free = b.get("free")
+                    available = b.get("available")
+                    locked = b.get("locked")
+                    held = b.get("held")
+                    total += _f(free if free is not None else available)
+                    total += _f(locked if locked is not None else held)
+                return total
+
+            mewc = _asset_total("MEWC")
+            usdt = _asset_total("USDT")
             mewc_val = mewc * mewc_price
             total = mewc_val + usdt
             return {
@@ -65,7 +84,7 @@ class PnLCalculator:
                 "total_value_usdt": total,
                 "mewc_percentage": (mewc_val / total * 100) if total > 0 else 0
             }
-        except:
+        except (TypeError, ValueError, AttributeError):
             return {
                 "mewc_balance": 0,
                 "mewc_value_usdt": 0,

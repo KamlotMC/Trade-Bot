@@ -35,6 +35,27 @@ def sf(val, default=0.0):
     except (ValueError, TypeError):
         return default
 
+
+def get_asset_totals(balances, asset: str) -> float:
+    """Normalize balance schema variants and avoid double counting.
+
+    Some endpoints return pairs like free/locked, others available/held.
+    We treat them as aliases and prefer free/locked when present.
+    """
+    total = 0.0
+    for b in balances:
+        if b.get("asset") != asset:
+            continue
+        free = b.get("free")
+        locked = b.get("locked")
+        available = b.get("available")
+        held = b.get("held")
+
+        free_part = sf(free if free is not None else available)
+        locked_part = sf(locked if locked is not None else held)
+        total += free_part + locked_part
+    return total
+
 def get_price_data():
     """Get MEWC price data - FIXED with correct field names"""
     try:
@@ -135,10 +156,8 @@ async def api_portfolio():
     
     if "error" not in balances_result:
         bl = balances_result.get("balances", balances_result) if isinstance(balances_result, dict) else balances_result
-        mewc = sum(sf(b.get("available")) + sf(b.get("locked")) + sf(b.get("held")) + sf(b.get("free")) 
-                  for b in bl if b.get("asset") == "MEWC")
-        usdt = sum(sf(b.get("available")) + sf(b.get("locked")) + sf(b.get("held")) + sf(b.get("free")) 
-                  for b in bl if b.get("asset") == "USDT")
+        mewc = get_asset_totals(bl, "MEWC")
+        usdt = get_asset_totals(bl, "USDT")
     else:
         print(f"⚠️ Balances API error: {balances_result.get('error')}")
         mewc, usdt = 1240000, 39.97
@@ -232,6 +251,13 @@ def parse_fills_from_logs() -> list:
         prev_mewc = prev_usdt = None
         
         for line in lines:
+            ts_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|', line)
+            line_ts = None
+            if ts_match:
+                try:
+                    line_ts = datetime.strptime(ts_match.group(1), "%Y-%m-%d %H:%M:%S").isoformat()
+                except ValueError:
+                    line_ts = None
             # Match balance line: Balances — MEWC: 1240000.00 avail / 100000.00 held | USDT: 39.97 avail / 2.58 held
             m = re.search(r'Balances\s+—\s+MEWC:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held\s*\|\s*USDT:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held', line)
             if m:
@@ -246,7 +272,7 @@ def parse_fills_from_logs() -> list:
                     if mewc_diff > 100 and usdt_diff < -0.1:
                         price = abs(usdt_diff / mewc_diff)
                         trades.append({
-                            "timestamp": datetime.now().isoformat(),
+                            "timestamp": line_ts or datetime.now().isoformat(),
                             "side": "BUY",
                             "quantity": abs(mewc_diff),
                             "price": price,
@@ -260,7 +286,7 @@ def parse_fills_from_logs() -> list:
                     elif mewc_diff < -100 and usdt_diff > 0.1:
                         price = abs(usdt_diff / mewc_diff)
                         trades.append({
-                            "timestamp": datetime.now().isoformat(),
+                            "timestamp": line_ts or datetime.now().isoformat(),
                             "side": "SELL",
                             "quantity": abs(mewc_diff),
                             "price": price,
@@ -335,21 +361,30 @@ async def sync_trades():
     print(f"📊 Got {len(fills)} trades from API")
     
     added = 0
+    existing = data_store.get_trades(10000, 365)
+    existing_keys = {
+        (str(t.get("order_id") or ""), str(t.get("side") or ""), float(sf(t.get("quantity"))), float(sf(t.get("price"))))
+        for t in existing
+    }
+
     for f in fills:
-        oid = str(f.get('orderId') or f.get('id') or '')
-        if not oid:
-            continue
-        
-        existing = data_store.get_trades(1000, 365)
-        if any(t.get("order_id") == oid for t in existing):
+        oid = str(f.get('orderId') or '')
+        tid = str(f.get('id') or '')
+        dedup_id = tid or oid
+        if not dedup_id:
             continue
         
         side = f.get('side', 'BUY').upper()
         qty = sf(f.get('qty') or f.get('quantity'))
         prc = sf(f.get('price'))
         fee = sf(f.get('commission') or f.get('fee'))
+
+        key = (dedup_id, side, float(qty), float(prc))
+        if key in existing_keys:
+            continue
         
-        data_store.add_trade(side=side, quantity=qty, price=prc, fee=fee, order_id=oid)
+        data_store.add_trade(side=side, quantity=qty, price=prc, fee=fee, order_id=dedup_id)
+        existing_keys.add(key)
         print(f"  + Added: {side} {qty} @ {prc}")
         added += 1
     

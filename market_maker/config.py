@@ -85,10 +85,26 @@ class RiskConfig:
     max_mewc_exposure: float = 50000000.0
     max_usdt_exposure: float = 5000.0
     inventory_skew_factor: float = 0.5
+    inventory_target_ratio: float = 0.5
     max_balance_usage_pct: float = 0.80
     stop_loss_usdt: float = -50.0
     max_open_orders: int = 20
     daily_loss_limit_usdt: float = -100.0
+    min_profit_after_fees_pct: float = 0.0
+    max_slippage_pct: float = 0.0
+
+
+@dataclass
+class VolatilityAdapterConfig:
+    enabled: bool = False
+
+
+@dataclass
+class CircuitBreakerConfig:
+    enabled: bool = False
+    crash_threshold_pct: float = 0.0
+    time_window_minutes: int = 0
+    pause_duration_sec: int = 0
 
 
 @dataclass
@@ -106,6 +122,8 @@ class BotConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    volatility_adapter: VolatilityAdapterConfig = field(default_factory=VolatilityAdapterConfig)
+    circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
 
 
 def load_config(config_path: str = "config.yaml") -> BotConfig:
@@ -146,6 +164,8 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
     st_raw = raw.get("strategy", {})
     rk_raw = raw.get("risk", {})
     lg_raw = raw.get("logging", {})
+    va_raw = raw.get("volatility_adapter", {})
+    cb_raw = raw.get("circuit_breaker", {})
 
     exchange = ExchangeConfig(
         base_url=ex_raw.get("base_url", ExchangeConfig.base_url),
@@ -172,10 +192,24 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
         max_mewc_exposure=rk_raw.get("max_mewc_exposure", RiskConfig.max_mewc_exposure),
         max_usdt_exposure=rk_raw.get("max_usdt_exposure", RiskConfig.max_usdt_exposure),
         inventory_skew_factor=rk_raw.get("inventory_skew_factor", RiskConfig.inventory_skew_factor),
+        inventory_target_ratio=rk_raw.get("inventory_target_ratio", RiskConfig.inventory_target_ratio),
         max_balance_usage_pct=rk_raw.get("max_balance_usage_pct", RiskConfig.max_balance_usage_pct),
         stop_loss_usdt=rk_raw.get("stop_loss_usdt", RiskConfig.stop_loss_usdt),
         max_open_orders=rk_raw.get("max_open_orders", RiskConfig.max_open_orders),
         daily_loss_limit_usdt=rk_raw.get("daily_loss_limit_usdt", RiskConfig.daily_loss_limit_usdt),
+        min_profit_after_fees_pct=rk_raw.get("min_profit_after_fees_pct", RiskConfig.min_profit_after_fees_pct),
+        max_slippage_pct=rk_raw.get("max_slippage_pct", RiskConfig.max_slippage_pct),
+    )
+
+    volatility_adapter = VolatilityAdapterConfig(
+        enabled=va_raw.get("enabled", VolatilityAdapterConfig.enabled),
+    )
+
+    circuit_breaker = CircuitBreakerConfig(
+        enabled=cb_raw.get("enabled", CircuitBreakerConfig.enabled),
+        crash_threshold_pct=cb_raw.get("crash_threshold_pct", CircuitBreakerConfig.crash_threshold_pct),
+        time_window_minutes=cb_raw.get("time_window_minutes", CircuitBreakerConfig.time_window_minutes),
+        pause_duration_sec=cb_raw.get("pause_duration_sec", CircuitBreakerConfig.pause_duration_sec),
     )
 
     logging_cfg = LoggingConfig(
@@ -191,6 +225,8 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
         strategy=strategy,
         risk=risk,
         logging=logging_cfg,
+        volatility_adapter=volatility_adapter,
+        circuit_breaker=circuit_breaker,
     ))
 
 
@@ -206,6 +242,10 @@ def _sanitize_config(cfg: BotConfig) -> BotConfig:
         (cfg.strategy, "level_step_pct"),
         (cfg.strategy, "min_spread_pct"),
         (cfg.risk, "max_balance_usage_pct"),
+        (cfg.risk, "inventory_target_ratio"),
+        (cfg.risk, "min_profit_after_fees_pct"),
+        (cfg.risk, "max_slippage_pct"),
+        (cfg.circuit_breaker, "crash_threshold_pct"),
     ]
     for obj, attr in pct_fields:
         val = getattr(obj, attr)

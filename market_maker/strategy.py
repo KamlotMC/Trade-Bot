@@ -11,6 +11,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from market_maker.config import StrategyConfig, BotConfig
@@ -373,14 +374,14 @@ class MarketMaker:
             if mewc_delta < -1000 and usdt_delta > 0.01:
                 price = abs(usdt_delta / mewc_delta)
                 fills.append({"side": "SELL", "quantity": abs(mewc_delta), "price": price, "timestamp": datetime.now().isoformat()})
-                self.logger.info(f"🟢 Detected SELL: {abs(mewc_delta):.0f} MEWC @ {price:.8f}")
+                logger.info("🟢 Detected SELL: %.0f MEWC @ %.8f", abs(mewc_delta), price)
             # Detect BUY: MEWC up, USDT down
             elif mewc_delta > 1000 and usdt_delta < -0.01:
                 price = abs(usdt_delta / mewc_delta)
                 fills.append({"side": "BUY", "quantity": mewc_delta, "price": price, "timestamp": datetime.now().isoformat()})
-                self.logger.info(f"🔴 Detected BUY: {mewc_delta:.0f} MEWC @ {price:.8f}")
+                logger.info("🔴 Detected BUY: %.0f MEWC @ %.8f", mewc_delta, price)
         except Exception as e:
-            self.logger.error(f"Fill detection error: {e}")
+            logger.error("Fill detection error: %s", e)
         return fills
 
     def _save_fill_to_db(self, fill: dict):
@@ -395,6 +396,6 @@ class MarketMaker:
                 (fill["timestamp"], fill["side"], fill["quantity"], fill["price"], 0, 0, f"detected_{int(datetime.now().timestamp())}"))
             conn.commit()
             conn.close()
-            self.logger.info(f"💾 Saved fill: {fill['side']} {fill['quantity']:.0f} @ {fill['price']:.8f}")
+            logger.info("💾 Saved fill: %s %.0f @ %.8f", fill["side"], fill["quantity"], fill["price"])
         except Exception as e:
-            self.logger.error(f"Save fill error: {e}")
+            logger.error("Save fill error: %s", e)

@@ -266,6 +266,12 @@ class MarketMakerGUI:
             ("min_bid_price", "Min Bid Price ($, 0=off)"),
             ("min_order_value_usdt", "Min Order Value (USDT)"),
             ("refresh_interval_sec", "Refresh Interval (sec)"),
+            ("adaptive_spread_enabled", "Adaptive Spread (1=on, 0=off)"),
+            ("volatility_lookback", "Volatility Lookback (ticks)"),
+            ("trend_lookback", "Trend Lookback (ticks)"),
+            ("queue_reprice_threshold_pct", "Reprice Threshold (e.g. 0.2 = 0.2%)"),
+            ("imbalance_skew_enabled", "Orderbook Imbalance Skew (1=on, 0=off)"),
+            ("session_schedule_enabled", "Session Schedule (1=on, 0=off)"),
         ]
         for i, (key, label) in enumerate(strat_fields):
             var = tk.StringVar()
@@ -292,6 +298,9 @@ class MarketMakerGUI:
             ("daily_loss_limit_usdt", "Daily Loss Limit (USDT)"),
             ("min_profit_after_fees_pct", "Min Profit After Fees (e.g. 0.6 = 0.6%)"),
             ("max_slippage_pct", "Max Slippage (e.g. 2 = 2%)"),
+            ("intraday_max_consecutive_losses", "Intraday Max Consecutive Losses"),
+            ("inventory_band_low", "Inventory Band Low (e.g. 40 = 40%)"),
+            ("inventory_band_high", "Inventory Band High (e.g. 70 = 70%)"),
         ]
         for i, (key, label) in enumerate(risk_fields):
             var = tk.StringVar()
@@ -331,6 +340,9 @@ class MarketMakerGUI:
             "risk.inventory_target_ratio",
             "risk.min_profit_after_fees_pct",
             "risk.max_slippage_pct",
+            "strategy.queue_reprice_threshold_pct",
+            "risk.inventory_band_low",
+            "risk.inventory_band_high",
         }
 
         self.api_key_var.set(self.config.exchange.api_key or "")
@@ -348,6 +360,12 @@ class MarketMakerGUI:
             "strategy.min_bid_price": str(s.min_bid_price),
             "strategy.min_order_value_usdt": str(s.min_order_value_usdt),
             "strategy.refresh_interval_sec": str(s.refresh_interval_sec),
+            "strategy.adaptive_spread_enabled": "1" if s.adaptive_spread_enabled else "0",
+            "strategy.volatility_lookback": str(s.volatility_lookback),
+            "strategy.trend_lookback": str(s.trend_lookback),
+            "strategy.queue_reprice_threshold_pct": str(s.queue_reprice_threshold_pct),
+            "strategy.imbalance_skew_enabled": "1" if s.imbalance_skew_enabled else "0",
+            "strategy.session_schedule_enabled": "1" if s.session_schedule_enabled else "0",
             "risk.max_mewc_exposure": str(r.max_mewc_exposure),
             "risk.max_usdt_exposure": str(r.max_usdt_exposure),
             "risk.inventory_skew_factor": str(r.inventory_skew_factor),
@@ -358,6 +376,9 @@ class MarketMakerGUI:
             "risk.daily_loss_limit_usdt": str(r.daily_loss_limit_usdt),
             "risk.min_profit_after_fees_pct": str(r.min_profit_after_fees_pct),
             "risk.max_slippage_pct": str(r.max_slippage_pct),
+            "risk.intraday_max_consecutive_losses": str(r.intraday_max_consecutive_losses),
+            "risk.inventory_band_low": str(r.inventory_band_low),
+            "risk.inventory_band_high": str(r.inventory_band_high),
         }
         for key, val in values.items():
             if key in self.setting_vars:
@@ -571,7 +592,13 @@ class MarketMakerGUI:
             messagebox.showerror("Connection Test Failed", "\n".join(parts))
 
     def _save_settings(self) -> None:
-        int_fields = {"num_levels", "refresh_interval_sec", "max_open_orders"}
+        int_fields = {
+            "num_levels", "refresh_interval_sec", "max_open_orders",
+            "volatility_lookback", "trend_lookback", "intraday_max_consecutive_losses",
+        }
+        bool_fields = {
+            "adaptive_spread_enabled", "imbalance_skew_enabled", "session_schedule_enabled",
+        }
         try:
             config_data = {
                 "exchange": {
@@ -601,6 +628,9 @@ class MarketMakerGUI:
             for key, var in self.setting_vars.items():
                 section, field = key.split(".", 1)
                 raw = var.get().strip()
+                if field in bool_fields:
+                    config_data[section][field] = raw.lower() in ("1", "true", "yes", "y", "on")
+                    continue
                 if field in int_fields:
                     config_data[section][field] = int(raw)
                 else:

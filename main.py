@@ -145,6 +145,23 @@ def main():
     setup_logger("mewc_mm.strategy", config.logging)
     setup_logger("mewc_mm.risk", config.logging)
 
+    # Dry-run check (should work even without API keys)
+    if args.dry_run:
+        log.info("=== DRY RUN MODE ===")
+        log.info("Exchange:  %s", config.exchange.base_url)
+        log.info("Symbol:    %s", config.exchange.symbol)
+        log.info("Spread:    %.2f%%", config.strategy.spread_pct * 100)
+        log.info("Levels:    %d", config.strategy.num_levels)
+        log.info("Base Qty:  %.2f MEWC", config.strategy.base_quantity)
+        log.info("Min Bid:   $%.2f", config.strategy.min_bid_price)
+        log.info("Refresh:   %ds", config.strategy.refresh_interval_sec)
+        log.info("Max MEWC:  %.2f", config.risk.max_mewc_exposure)
+        log.info("Max USDT:  %.2f", config.risk.max_usdt_exposure)
+        log.info("Stop Loss: %.2f USDT", config.risk.stop_loss_usdt)
+        log.info("Daily Cap: %.2f USDT", config.risk.daily_loss_limit_usdt)
+        log.info("=== END DRY RUN — no orders placed ===")
+        sys.exit(0)
+
     # Validate API keys — interactive first-run setup if missing
     if not config.exchange.api_key or not config.exchange.api_secret:
         env_file = app_dir / ".env"
@@ -198,23 +215,6 @@ def main():
             print("\nExiting.")
             sys.exit(0)
 
-    # Dry-run check
-    if args.dry_run:
-        log.info("=== DRY RUN MODE ===")
-        log.info("Exchange:  %s", config.exchange.base_url)
-        log.info("Symbol:    %s", config.exchange.symbol)
-        log.info("Spread:    %.2f%%", config.strategy.spread_pct * 100)
-        log.info("Levels:    %d", config.strategy.num_levels)
-        log.info("Base Qty:  %.2f MEWC", config.strategy.base_quantity)
-        log.info("Min Bid:   $%.2f", config.strategy.min_bid_price)
-        log.info("Refresh:   %ds", config.strategy.refresh_interval_sec)
-        log.info("Max MEWC:  %.2f", config.risk.max_mewc_exposure)
-        log.info("Max USDT:  %.2f", config.risk.max_usdt_exposure)
-        log.info("Stop Loss: %.2f USDT", config.risk.stop_loss_usdt)
-        log.info("Daily Cap: %.2f USDT", config.risk.daily_loss_limit_usdt)
-        log.info("=== END DRY RUN — no orders placed ===")
-        sys.exit(0)
-
     # Initialize components
     client = NonKYCClient(config.exchange)
     risk = RiskManager(config.risk)
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     try:
         main()
     except SystemExit:
-        pass  # argparse / normal sys.exit
+        raise
     except Exception as exc:
         print(f"\n\nFATAL ERROR: {exc}")
         import traceback; traceback.print_exc()

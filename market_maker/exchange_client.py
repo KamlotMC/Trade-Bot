@@ -110,7 +110,8 @@ class NonKYCClient:
         """Execute a GET request."""
         url = f"{self.base_url}/{path.lstrip('/')}"
         if params:
-            query = "&".join(f"{k}={v}" for k, v in params.items())
+            # Keep signing/query deterministic.
+            query = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
             full_url = f"{url}?{query}"
         else:
             full_url = url

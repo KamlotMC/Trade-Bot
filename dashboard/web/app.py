@@ -35,6 +35,56 @@ def sf(val, default=0.0):
     except (ValueError, TypeError):
         return default
 
+
+def get_asset_totals(balances, asset: str) -> float:
+    """Normalize balance schema variants and avoid double counting.
+
+    Some endpoints return pairs like free/locked, others available/held.
+    We treat them as aliases and prefer free/locked when present.
+    """
+    total = 0.0
+    for b in balances:
+        if b.get("asset") != asset:
+            continue
+        free = b.get("free")
+        locked = b.get("locked")
+        available = b.get("available")
+        held = b.get("held")
+
+        free_part = sf(free if free is not None else available)
+        locked_part = sf(locked if locked is not None else held)
+        total += free_part + locked_part
+    return total
+
+def enrich_trades_with_realized_pnl(trades: list) -> list:
+    """Return trades enriched with FIFO-based realized P&L on SELL fills."""
+    enriched = []
+    pos, avg = 0.0, 0.0
+
+    for t in reversed(trades):
+        side = str(t.get("side", "")).upper()
+        qty = sf(t.get("quantity"))
+        prc = sf(t.get("price"))
+        fee = sf(t.get("fee"))
+        calc_pnl = None
+
+        if side == "BUY" and qty > 0:
+            cost = (pos * avg) + (qty * prc) + fee
+            pos += qty
+            avg = cost / pos if pos > 0 else 0
+        elif side == "SELL" and pos > 0 and qty > 0:
+            rev = (qty * prc) - fee
+            cst = qty * avg
+            calc_pnl = rev - cst
+            pos -= qty
+
+        tt = dict(t)
+        tt["calculated_pnl"] = calc_pnl
+        enriched.append(tt)
+
+    return list(reversed(enriched))
+
+
 def get_price_data():
     """Get MEWC price data - FIXED with correct field names"""
     try:
@@ -132,31 +182,41 @@ async def api_price():
 @app.get("/api/portfolio")
 async def api_portfolio():
     balances_result = api_client.get_balances()
-    
+
+    data_source = "exchange"
+    data_warning = None
+
     if "error" not in balances_result:
         bl = balances_result.get("balances", balances_result) if isinstance(balances_result, dict) else balances_result
-        mewc = sum(sf(b.get("available")) + sf(b.get("locked")) + sf(b.get("held")) + sf(b.get("free")) 
-                  for b in bl if b.get("asset") == "MEWC")
-        usdt = sum(sf(b.get("available")) + sf(b.get("locked")) + sf(b.get("held")) + sf(b.get("free")) 
-                  for b in bl if b.get("asset") == "USDT")
+        mewc = get_asset_totals(bl, "MEWC")
+        usdt = get_asset_totals(bl, "USDT")
     else:
-        print(f"⚠️ Balances API error: {balances_result.get('error')}")
-        mewc, usdt = 1240000, 39.97
-    
+        err = balances_result.get("error") if isinstance(balances_result, dict) else str(balances_result)
+        print(f"⚠️ Balances API error: {err}")
+        data_source = "history_fallback"
+        data_warning = f"Balances unavailable: {err}"
+
+        # Prefer recent total from history to avoid fake hardcoded balances.
+        hist = data_store.get_portfolio_history(7)
+        last_total = hist[-1]["total_value_usdt"] if hist else 0.0
+        mewc, usdt = 0.0, float(last_total)
+
     price_data = get_price_data()
     price = price_data["last_price"] if price_data and price_data["last_price"] > 0 else 0.00003750
     mewc_val = mewc * price
     total = mewc_val + usdt
-    
+
     # Save snapshot
     data_store.add_snapshot(total)
-    
+
     return {
         "mewc_balance": round(mewc, 2),
         "mewc_value_usdt": round(mewc_val, 2),
         "usdt_balance": round(usdt, 2),
         "total_value_usdt": round(total, 2),
-        "mewc_percentage": round((mewc_val / total * 100), 2) if total > 0 else 0
+        "mewc_percentage": round((mewc_val / total * 100), 2) if total > 0 else 0,
+        "data_source": data_source,
+        "data_warning": data_warning,
     }
 
 @app.get("/api/pnl")
@@ -183,29 +243,13 @@ async def api_pnl_saldo():
 async def api_win_rate():
     trades = data_store.get_trades(1000, 30)
     print(f"📊 Win rate: {len(trades)} trades in DB")
-    
-    pos, avg, wins, losses = 0.0, 0.0, 0, 0
-    
-    for t in reversed(trades):
-        side = t.get("side", "").upper()
-        qty = sf(t.get("quantity"))
-        prc = sf(t.get("price"))
-        fee = sf(t.get("fee"))
-        
-        if side == "BUY" and qty > 0:
-            cost = (pos * avg) + (qty * prc) + fee
-            pos += qty
-            avg = cost / pos if pos > 0 else 0
-        elif side == "SELL" and pos > 0 and qty > 0:
-            rev = (qty * prc) - fee
-            cst = qty * avg
-            if rev > cst:
-                wins += 1
-            elif rev < cst:
-                losses += 1
-            pos -= qty
-    
+
+    enriched = enrich_trades_with_realized_pnl(trades)
+    realized = [t.get("calculated_pnl") for t in enriched if t.get("calculated_pnl") is not None]
+    wins = sum(1 for p in realized if p > 0)
+    losses = sum(1 for p in realized if p < 0)
     total = wins + losses
+
     result = {
         "win_rate": round((wins / total * 100), 1) if total > 0 else 0,
         "winning": wins,
@@ -232,6 +276,13 @@ def parse_fills_from_logs() -> list:
         prev_mewc = prev_usdt = None
         
         for line in lines:
+            ts_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|', line)
+            line_ts = None
+            if ts_match:
+                try:
+                    line_ts = datetime.strptime(ts_match.group(1), "%Y-%m-%d %H:%M:%S").isoformat()
+                except ValueError:
+                    line_ts = None
             # Match balance line: Balances — MEWC: 1240000.00 avail / 100000.00 held | USDT: 39.97 avail / 2.58 held
             m = re.search(r'Balances\s+—\s+MEWC:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held\s*\|\s*USDT:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held', line)
             if m:
@@ -246,7 +297,7 @@ def parse_fills_from_logs() -> list:
                     if mewc_diff > 100 and usdt_diff < -0.1:
                         price = abs(usdt_diff / mewc_diff)
                         trades.append({
-                            "timestamp": datetime.now().isoformat(),
+                            "timestamp": line_ts or datetime.now().isoformat(),
                             "side": "BUY",
                             "quantity": abs(mewc_diff),
                             "price": price,
@@ -260,7 +311,7 @@ def parse_fills_from_logs() -> list:
                     elif mewc_diff < -100 and usdt_diff > 0.1:
                         price = abs(usdt_diff / mewc_diff)
                         trades.append({
-                            "timestamp": datetime.now().isoformat(),
+                            "timestamp": line_ts or datetime.now().isoformat(),
                             "side": "SELL",
                             "quantity": abs(mewc_diff),
                             "price": price,
@@ -294,31 +345,7 @@ async def api_fills():
             trades = data_store.get_trades(50, 30)
     print(f"📊 Fills: {len(trades)} trades from DB")
     
-    result = []
-    pos, avg = 0.0, 0.0
-    
-    for t in reversed(trades):
-        side = t.get("side", "").upper()
-        qty = sf(t.get("quantity"))
-        prc = sf(t.get("price"))
-        fee = sf(t.get("fee"))
-        calc_pnl = None
-        
-        if side == "BUY" and qty > 0:
-            cost = (pos * avg) + (qty * prc) + fee
-            pos += qty
-            avg = cost / pos if pos > 0 else 0
-        elif side == "SELL" and pos > 0 and qty > 0:
-            rev = (qty * prc) - fee
-            cst = qty * avg
-            calc_pnl = rev - cst
-            pos -= qty
-        
-        trade_with_pnl = dict(t)
-        trade_with_pnl["calculated_pnl"] = calc_pnl
-        result.append(trade_with_pnl)
-    
-    final_result = list(reversed(result))
+    final_result = enrich_trades_with_realized_pnl(trades)
     print(f"✅ Returning {len(final_result)} trades")
     return final_result
 
@@ -335,21 +362,31 @@ async def sync_trades():
     print(f"📊 Got {len(fills)} trades from API")
     
     added = 0
+    existing = data_store.get_trades(10000, 365)
+    existing_keys = {
+        (str(t.get("order_id") or ""), str(t.get("side") or ""), float(sf(t.get("quantity"))), float(sf(t.get("price"))), str(t.get("timestamp") or ""))
+        for t in existing
+    }
+
     for f in fills:
-        oid = str(f.get('orderId') or f.get('id') or '')
-        if not oid:
-            continue
-        
-        existing = data_store.get_trades(1000, 365)
-        if any(t.get("order_id") == oid for t in existing):
+        oid = str(f.get('orderId') or '')
+        tid = str(f.get('id') or '')
+        dedup_id = tid or oid
+        if not dedup_id:
             continue
         
         side = f.get('side', 'BUY').upper()
         qty = sf(f.get('qty') or f.get('quantity'))
         prc = sf(f.get('price'))
         fee = sf(f.get('commission') or f.get('fee'))
+        ts = str(f.get('timestamp') or f.get('time') or f.get('createdAt') or "")
+
+        key = (dedup_id, side, float(qty), float(prc), ts)
+        if key in existing_keys:
+            continue
         
-        data_store.add_trade(side=side, quantity=qty, price=prc, fee=fee, order_id=oid)
+        data_store.add_trade(side=side, quantity=qty, price=prc, fee=fee, order_id=dedup_id)
+        existing_keys.add(key)
         print(f"  + Added: {side} {qty} @ {prc}")
         added += 1
     
@@ -367,6 +404,11 @@ async def api_bot_status():
 @app.get("/api/open-orders-logs")
 async def api_open_orders():
     return log_parser.get_open_orders_from_logs(200)
+
+
+@app.get("/api/order-lifecycle")
+async def api_order_lifecycle():
+    return log_parser.get_order_lifecycle(500)
 
 @app.get("/api/errors")
 async def api_errors():
@@ -388,27 +430,30 @@ async def get_profitability_stats():
             "avg_trade_profit": 0,
             "best_trade": 0,
             "worst_trade": 0,
-            "profit_factor": 0
+            "profit_factor": 0,
+            "methodology": "Realized FIFO PnL (fees included per fill)",
         }
     
     # Calculate statistics
     total_trades = len(trades)
-    total_volume = sum(t.get("quantity", 0) * t.get("price", 0) for t in trades)
-    total_fees = sum(t.get("fee", 0) for t in trades)
-    
-    winning_trades = [t for t in trades if t.get("pnl", 0) > 0]
-    losing_trades = [t for t in trades if t.get("pnl", 0) < 0]
-    
-    gross_profit = sum(t.get("pnl", 0) for t in winning_trades)
-    gross_loss = abs(sum(t.get("pnl", 0) for t in losing_trades))
-    net_profit = gross_profit - gross_loss - total_fees
-    
-    avg_trade = net_profit / total_trades if total_trades > 0 else 0
-    best_trade = max((t.get("pnl", 0) for t in trades), default=0)
-    worst_trade = min((t.get("pnl", 0) for t in trades), default=0)
-    
+    total_volume = sum(sf(t.get("quantity")) * sf(t.get("price")) for t in trades)
+    total_fees = sum(sf(t.get("fee")) for t in trades)
+
+    enriched = enrich_trades_with_realized_pnl(trades)
+    realized = [sf(t.get("calculated_pnl")) for t in enriched if t.get("calculated_pnl") is not None]
+    winning_trades = [p for p in realized if p > 0]
+    losing_trades = [p for p in realized if p < 0]
+
+    gross_profit = sum(winning_trades)
+    gross_loss = abs(sum(losing_trades))
+    net_profit = gross_profit - gross_loss
+
+    avg_trade = net_profit / len(realized) if realized else 0
+    best_trade = max(realized, default=0)
+    worst_trade = min(realized, default=0)
+
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
-    
+
     return {
         "total_trades": total_trades,
         "winning_trades": len(winning_trades),
@@ -422,7 +467,91 @@ async def get_profitability_stats():
         "best_trade_usdt": round(best_trade, 4),
         "worst_trade_usdt": round(worst_trade, 4),
         "profit_factor": round(profit_factor, 2) if profit_factor != float('inf') else "∞",
-        "win_rate_pct": round(len(winning_trades) / total_trades * 100, 1) if total_trades > 0 else 0
+        "win_rate_pct": round(len(winning_trades) / len(realized) * 100, 1) if realized else 0,
+        # Clear naming for current implementation semantics
+        "gross_profit_after_fees_usdt": round(gross_profit, 4),
+        "net_realized_pnl_after_fees_usdt": round(net_profit, 4),
+        "methodology": "Realized FIFO PnL (fees included per fill)",
+    }
+
+
+@app.get("/api/execution-quality")
+async def api_execution_quality():
+    """Execution quality stats from realized FIFO PnL stream."""
+    trades = data_store.get_trades(1000, 30)
+    enriched = enrich_trades_with_realized_pnl(trades)
+    realized = [sf(t.get("calculated_pnl")) for t in enriched if t.get("calculated_pnl") is not None]
+
+    fills_total = len(trades)
+    sell_fills = len(realized)
+    positive = [p for p in realized if p > 0]
+    negative = [p for p in realized if p < 0]
+
+    # Basic realized spread capture proxy from SELL fills.
+    spread_capture = [p for p in realized]
+
+    # Anomaly alerts.
+    alerts = []
+    if fills_total == 0:
+        alerts.append("No fills in selected period")
+    if sell_fills >= 5 and len(negative) / sell_fills > 0.7:
+        alerts.append("High adverse selection: >70% negative realized SELL fills")
+
+    return {
+        "fills_total": fills_total,
+        "sell_fills_with_realized_pnl": sell_fills,
+        "positive_sell_fills": len(positive),
+        "negative_sell_fills": len(negative),
+        "avg_realized_pnl_per_sell_usdt": round(sum(realized) / sell_fills, 6) if sell_fills else 0,
+        "median_like_realized_pnl_usdt": round(sorted(realized)[sell_fills // 2], 6) if sell_fills else 0,
+        "realized_spread_capture_usdt": round(sum(spread_capture), 6),
+        "fill_to_post_ratio": 0,  # placeholder until post count comes from lifecycle aggregation
+        "avg_fill_latency_sec": None,  # requires exchange-side order event timestamps
+        "post_fill_adverse_move_pct": None,  # requires tick series around fill time
+        "alerts": alerts,
+        "methodology": "Realized FIFO PnL (fees included per fill)",
+    }
+
+
+@app.get("/api/live-risk")
+async def api_live_risk():
+    """Live risk widget payload from latest balances + config bands."""
+    balances_result = api_client.get_balances()
+    if "error" in balances_result:
+        return {
+            "inventory_ratio": 0,
+            "target_ratio": 0.6,
+            "band_low": 0.4,
+            "band_high": 0.7,
+            "current_skew": 0,
+            "risk_halted": False,
+            "risk_reason": balances_result.get("error"),
+        }
+
+    bl = balances_result.get("balances", balances_result) if isinstance(balances_result, dict) else balances_result
+    mewc = get_asset_totals(bl, "MEWC")
+    usdt = get_asset_totals(bl, "USDT")
+    pd = get_price_data() or {"last_price": 0}
+    mid = sf(pd.get("last_price"))
+    mewc_val = mewc * mid
+    total = mewc_val + usdt
+    ratio = (mewc_val / total) if total > 0 else 0
+
+    # Mirror current config defaults for dashboard risk bands.
+    target = 0.6
+    band_low = 0.4
+    band_high = 0.7
+    skew = ((ratio - target) / max(target, 1 - target, 1e-9)) if total > 0 else 0
+    skew = max(min(skew, 1), -1)
+
+    return {
+        "inventory_ratio": round(ratio, 4),
+        "target_ratio": target,
+        "band_low": band_low,
+        "band_high": band_high,
+        "current_skew": round(skew, 4),
+        "risk_halted": False,
+        "risk_reason": "",
     }
 
 if __name__ == "__main__":

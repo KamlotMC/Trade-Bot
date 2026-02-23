@@ -78,6 +78,12 @@ class StrategyConfig:
     min_order_value_usdt: float = 1.10
     refresh_interval_sec: int = 30
     order_type: str = "limit"
+    adaptive_spread_enabled: bool = True
+    volatility_lookback: int = 10
+    trend_lookback: int = 10
+    queue_reprice_threshold_pct: float = 0.002
+    imbalance_skew_enabled: bool = True
+    session_schedule_enabled: bool = False
 
 
 @dataclass
@@ -85,10 +91,29 @@ class RiskConfig:
     max_mewc_exposure: float = 50000000.0
     max_usdt_exposure: float = 5000.0
     inventory_skew_factor: float = 0.5
+    inventory_target_ratio: float = 0.5
     max_balance_usage_pct: float = 0.80
     stop_loss_usdt: float = -50.0
     max_open_orders: int = 20
     daily_loss_limit_usdt: float = -100.0
+    min_profit_after_fees_pct: float = 0.0
+    max_slippage_pct: float = 0.0
+    intraday_max_consecutive_losses: int = 4
+    inventory_band_low: float = 0.4
+    inventory_band_high: float = 0.7
+
+
+@dataclass
+class VolatilityAdapterConfig:
+    enabled: bool = False
+
+
+@dataclass
+class CircuitBreakerConfig:
+    enabled: bool = False
+    crash_threshold_pct: float = 0.0
+    time_window_minutes: int = 0
+    pause_duration_sec: int = 0
 
 
 @dataclass
@@ -106,6 +131,8 @@ class BotConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    volatility_adapter: VolatilityAdapterConfig = field(default_factory=VolatilityAdapterConfig)
+    circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
 
 
 def load_config(config_path: str = "config.yaml") -> BotConfig:
@@ -146,6 +173,8 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
     st_raw = raw.get("strategy", {})
     rk_raw = raw.get("risk", {})
     lg_raw = raw.get("logging", {})
+    va_raw = raw.get("volatility_adapter", {})
+    cb_raw = raw.get("circuit_breaker", {})
 
     exchange = ExchangeConfig(
         base_url=ex_raw.get("base_url", ExchangeConfig.base_url),
@@ -166,16 +195,39 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
         min_order_value_usdt=st_raw.get("min_order_value_usdt", StrategyConfig.min_order_value_usdt),
         refresh_interval_sec=st_raw.get("refresh_interval_sec", StrategyConfig.refresh_interval_sec),
         order_type=st_raw.get("order_type", StrategyConfig.order_type),
+        adaptive_spread_enabled=st_raw.get("adaptive_spread_enabled", StrategyConfig.adaptive_spread_enabled),
+        volatility_lookback=st_raw.get("volatility_lookback", StrategyConfig.volatility_lookback),
+        trend_lookback=st_raw.get("trend_lookback", StrategyConfig.trend_lookback),
+        queue_reprice_threshold_pct=st_raw.get("queue_reprice_threshold_pct", StrategyConfig.queue_reprice_threshold_pct),
+        imbalance_skew_enabled=st_raw.get("imbalance_skew_enabled", StrategyConfig.imbalance_skew_enabled),
+        session_schedule_enabled=st_raw.get("session_schedule_enabled", StrategyConfig.session_schedule_enabled),
     )
 
     risk = RiskConfig(
         max_mewc_exposure=rk_raw.get("max_mewc_exposure", RiskConfig.max_mewc_exposure),
         max_usdt_exposure=rk_raw.get("max_usdt_exposure", RiskConfig.max_usdt_exposure),
         inventory_skew_factor=rk_raw.get("inventory_skew_factor", RiskConfig.inventory_skew_factor),
+        inventory_target_ratio=rk_raw.get("inventory_target_ratio", RiskConfig.inventory_target_ratio),
         max_balance_usage_pct=rk_raw.get("max_balance_usage_pct", RiskConfig.max_balance_usage_pct),
         stop_loss_usdt=rk_raw.get("stop_loss_usdt", RiskConfig.stop_loss_usdt),
         max_open_orders=rk_raw.get("max_open_orders", RiskConfig.max_open_orders),
         daily_loss_limit_usdt=rk_raw.get("daily_loss_limit_usdt", RiskConfig.daily_loss_limit_usdt),
+        min_profit_after_fees_pct=rk_raw.get("min_profit_after_fees_pct", RiskConfig.min_profit_after_fees_pct),
+        max_slippage_pct=rk_raw.get("max_slippage_pct", RiskConfig.max_slippage_pct),
+        intraday_max_consecutive_losses=rk_raw.get("intraday_max_consecutive_losses", RiskConfig.intraday_max_consecutive_losses),
+        inventory_band_low=rk_raw.get("inventory_band_low", RiskConfig.inventory_band_low),
+        inventory_band_high=rk_raw.get("inventory_band_high", RiskConfig.inventory_band_high),
+    )
+
+    volatility_adapter = VolatilityAdapterConfig(
+        enabled=va_raw.get("enabled", VolatilityAdapterConfig.enabled),
+    )
+
+    circuit_breaker = CircuitBreakerConfig(
+        enabled=cb_raw.get("enabled", CircuitBreakerConfig.enabled),
+        crash_threshold_pct=cb_raw.get("crash_threshold_pct", CircuitBreakerConfig.crash_threshold_pct),
+        time_window_minutes=cb_raw.get("time_window_minutes", CircuitBreakerConfig.time_window_minutes),
+        pause_duration_sec=cb_raw.get("pause_duration_sec", CircuitBreakerConfig.pause_duration_sec),
     )
 
     logging_cfg = LoggingConfig(
@@ -191,6 +243,8 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
         strategy=strategy,
         risk=risk,
         logging=logging_cfg,
+        volatility_adapter=volatility_adapter,
+        circuit_breaker=circuit_breaker,
     ))
 
 
@@ -205,7 +259,14 @@ def _sanitize_config(cfg: BotConfig) -> BotConfig:
         (cfg.strategy, "spread_pct"),
         (cfg.strategy, "level_step_pct"),
         (cfg.strategy, "min_spread_pct"),
+        (cfg.strategy, "queue_reprice_threshold_pct"),
         (cfg.risk, "max_balance_usage_pct"),
+        (cfg.risk, "inventory_target_ratio"),
+        (cfg.risk, "min_profit_after_fees_pct"),
+        (cfg.risk, "max_slippage_pct"),
+        (cfg.risk, "inventory_band_low"),
+        (cfg.risk, "inventory_band_high"),
+        (cfg.circuit_breaker, "crash_threshold_pct"),
     ]
     for obj, attr in pct_fields:
         val = getattr(obj, attr)

@@ -37,6 +37,7 @@ class RiskManager:
         self.position = PositionState()
         self._halted = False
         self._halt_reason = ""
+        self._recent_realized_pnls = []
 
     @property
     def is_halted(self) -> bool:
@@ -94,6 +95,30 @@ class RiskManager:
             side, quantity, price, fee, self.position.daily_pnl_usdt,
         )
         self._check_daily_loss()
+
+    def register_realized_pnl(self, pnl_usdt: float) -> None:
+        """Track realized PnL stream for intraday kill-switch logic."""
+        self._recent_realized_pnls.append(float(pnl_usdt))
+        if len(self._recent_realized_pnls) > 50:
+            self._recent_realized_pnls = self._recent_realized_pnls[-50:]
+
+        # Kill-switch: configurable consecutive losing realized sells.
+        n = max(int(getattr(self.cfg, "intraday_max_consecutive_losses", 4)), 2)
+        tail = self._recent_realized_pnls[-n:]
+        if len(tail) == n and all(p < 0 for p in tail):
+            self.halt(f"Intraday kill-switch: {n} consecutive losing fills")
+
+    def get_inventory_ratio(self) -> float:
+        """Current MEWC value ratio in total portfolio (0..1)."""
+        mid = self.position.last_mid_price
+        if mid <= 0:
+            return 0.0
+        mewc_value_usdt = (self.position.mewc_balance + self.position.mewc_held) * mid
+        total_usdt = self.position.usdt_balance + self.position.usdt_held
+        total_portfolio = mewc_value_usdt + total_usdt
+        if total_portfolio <= 0:
+            return 0.0
+        return mewc_value_usdt / total_portfolio
 
     # -------------------------------------------------------------------------
     # Pre-order checks
@@ -184,8 +209,12 @@ class RiskManager:
 
         # Ratio of MEWC value in total portfolio (0 to 1)
         mewc_ratio = mewc_value_usdt / total_portfolio
-        # Neutral is 0.5 (50/50), skew is deviation from that
-        skew = (mewc_ratio - 0.5) * 2.0  # Range: -1.0 to 1.0
+        # Neutral is configurable via inventory_target_ratio
+        target = min(max(self.cfg.inventory_target_ratio, 0.0), 1.0)
+        # Normalize by the furthest possible distance to keep range roughly [-1, 1]
+        denom = max(target, 1.0 - target, 1e-9)
+        skew = (mewc_ratio - target) / denom
+        skew = max(min(skew, 1.0), -1.0)
         return skew * self.cfg.inventory_skew_factor
 
     # -------------------------------------------------------------------------

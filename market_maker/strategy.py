@@ -9,9 +9,9 @@ Implements a symmetric spread-based market maker with:
 
 import logging
 import time
-import uuid
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from market_maker.config import StrategyConfig, BotConfig
 from market_maker.exchange_client import NonKYCClient
@@ -46,8 +46,12 @@ class MarketMaker:
         self.client = client
         self.risk = risk
         self._active_order_ids: List[str] = []
+        self._active_orders: Dict[str, QuoteLevel] = {}
         self._running = False
         self._cycle_count = 0
+        self._mid_history: List[float] = []
+        self._recent_realized: List[float] = []
+        self._last_fill_count = 0
 
     # -------------------------------------------------------------------------
     # Main loop
@@ -135,8 +139,8 @@ class MarketMaker:
             logger.error("Error fetching balances: %s", e)
             return
 
-        # 4. Cancel existing orders
-        self._cancel_all()
+        # 4. Detect fill-like changes and execution quality stats
+        self._record_execution_quality_snapshot(mid_price)
 
         # 5. Compute quotes
         quotes = self._compute_quotes(mid_price)
@@ -144,8 +148,8 @@ class MarketMaker:
             logger.info("No quotes to place this cycle")
             return
 
-        # 6. Place orders
-        self._place_orders(quotes)
+        # 6. Reprice only when stale (queue-position aware refresh)
+        self._reprice_orders(quotes, mid_price)
 
     # -------------------------------------------------------------------------
     # Price discovery
@@ -214,8 +218,36 @@ class MarketMaker:
         Incorporates inventory skew: if we're long MEWC, the ask spread narrows
         and the bid spread widens (to encourage selling MEWC back).
         """
+        self._mid_history.append(mid_price)
+        if len(self._mid_history) > 60:
+            self._mid_history = self._mid_history[-60:]
+
         skew = self.risk.compute_inventory_skew()
-        effective_spread = max(self.cfg.spread_pct, self.cfg.min_spread_pct)
+        effective_spread = self._adaptive_spread(mid_price)
+        orderbook = None
+        try:
+            orderbook = self.client.get_orderbook(limit=10)
+        except Exception:
+            orderbook = None
+
+        imbalance = self._orderbook_imbalance_skew(orderbook)
+        total_skew = max(min(skew + imbalance, 1.0), -1.0)
+
+        # Capital allocation bands: stop quoting one side at extremes.
+        inv_ratio = self.risk.get_inventory_ratio()
+        target = min(max(self.risk.cfg.inventory_target_ratio, 0.0), 1.0)
+        low_band = min(max(getattr(self.risk.cfg, "inventory_band_low", max(0.0, target - 0.2)), 0.0), 1.0)
+        high_band = min(max(getattr(self.risk.cfg, "inventory_band_high", min(1.0, target + 0.2)), 0.0), 1.0)
+        if low_band > high_band:
+            low_band, high_band = high_band, low_band
+        allow_buy = inv_ratio < high_band
+        allow_sell = inv_ratio > low_band
+
+        # Dynamic sizing by inventory pressure.
+        pressure = abs(inv_ratio - target) / max(target, 1 - target, 1e-9)
+        size_mult_buy = max(0.5, 1.0 - pressure) if inv_ratio > target else min(1.5, 1.0 + pressure)
+        size_mult_sell = max(0.5, 1.0 - pressure) if inv_ratio < target else min(1.5, 1.0 + pressure)
+
         buy_budget = self.risk.get_available_buy_budget()
         sell_inventory = self.risk.get_available_sell_inventory()
 
@@ -226,40 +258,62 @@ class MarketMaker:
             qty = self.cfg.base_quantity * (self.cfg.quantity_multiplier ** level)
 
             # --- BID (buy) ---
-            bid_offset = offset + (skew * effective_spread * 0.5)  # Widen if long
+            bid_offset = offset + (total_skew * effective_spread * 0.5)  # Widen if long
             bid_price = mid_price * (1.0 - bid_offset)
-            bid_cost = qty * bid_price
+            bid_qty = qty * size_mult_buy
+            bid_cost = bid_qty * bid_price
 
             # Ensure order meets exchange minimum value
             if bid_price > 0 and bid_cost < self.cfg.min_order_value_usdt:
-                qty = self.cfg.min_order_value_usdt / bid_price * 1.05  # 5% buffer
-                bid_cost = qty * bid_price
+                bid_qty = self.cfg.min_order_value_usdt / bid_price * 1.05  # 5% buffer
+                bid_cost = bid_qty * bid_price
 
             if bid_price < self.cfg.min_bid_price and self.cfg.min_bid_price > 0:
                 logger.debug("Bid L%d price %.8f below min_bid_price %.4f — skipping",
                              level, bid_price, self.cfg.min_bid_price)
-                continue
+                bid_allowed = False
+            else:
+                bid_allowed = True
 
-            if bid_cost <= buy_budget and bid_price > 0:
-                if self.risk.check_exposure("buy", qty, bid_price):
+            # Maker-only safeguard + capital allocation bands.
+            if orderbook and orderbook.get("asks"):
+                try:
+                    best_ask = float(orderbook["asks"][0]["price"])
+                    if bid_price >= best_ask:
+                        bid_allowed = False
+                except Exception:
+                    pass
+            bid_allowed = bid_allowed and allow_buy
+
+            if bid_allowed and bid_cost <= buy_budget and bid_price > 0:
+                if self.risk.check_exposure("buy", bid_qty, bid_price):
                     quotes.append(QuoteLevel(
-                        side="buy", price=bid_price, quantity=qty, level=level,
+                        side="buy", price=bid_price, quantity=bid_qty, level=level,
                     ))
                     buy_budget -= bid_cost
 
             # --- ASK (sell) ---
-            ask_offset = offset - (skew * effective_spread * 0.5)  # Tighten if long
+            ask_offset = offset - (total_skew * effective_spread * 0.5)  # Tighten if long
             ask_offset = max(ask_offset, self.cfg.min_spread_pct)  # Floor
             ask_price = mid_price * (1.0 + ask_offset)
 
             # Reset qty for ask side (recalculate from base)
-            ask_qty = self.cfg.base_quantity * (self.cfg.quantity_multiplier ** level)
+            ask_qty = self.cfg.base_quantity * (self.cfg.quantity_multiplier ** level) * size_mult_sell
 
             # Ensure order meets exchange minimum value
             if ask_price > 0 and (ask_qty * ask_price) < self.cfg.min_order_value_usdt:
                 ask_qty = self.cfg.min_order_value_usdt / ask_price * 1.05
 
-            if ask_qty <= sell_inventory and ask_price > 0:
+            ask_allowed = allow_sell
+            if orderbook and orderbook.get("bids"):
+                try:
+                    best_bid = float(orderbook["bids"][0]["price"])
+                    if ask_price <= best_bid:
+                        ask_allowed = False
+                except Exception:
+                    pass
+
+            if ask_allowed and ask_qty <= sell_inventory and ask_price > 0:
                 if self.risk.check_exposure("sell", ask_qty, ask_price):
                     quotes.append(QuoteLevel(
                         side="sell", price=ask_price, quantity=ask_qty, level=level,
@@ -267,12 +321,89 @@ class MarketMaker:
                     sell_inventory -= ask_qty
 
         logger.info(
-            "Quotes computed: %d bids + %d asks | mid=%.8f skew=%.4f",
+            "Quotes computed: %d bids + %d asks | mid=%.8f skew=%.4f spread=%.4f inv=%.3f",
             sum(1 for q in quotes if q.side == "buy"),
             sum(1 for q in quotes if q.side == "sell"),
-            mid_price, skew,
+            mid_price, total_skew, effective_spread, inv_ratio,
         )
         return quotes
+
+    def _adaptive_spread(self, mid_price: float) -> float:
+        """Adaptive spread by recent volatility + microtrend."""
+        base = max(self.cfg.spread_pct, self.cfg.min_spread_pct)
+        if not getattr(self.cfg, "adaptive_spread_enabled", True):
+            return base
+
+        lookback = max(int(getattr(self.cfg, "volatility_lookback", 10)), 4)
+        trend_lb = max(int(getattr(self.cfg, "trend_lookback", 10)), 2)
+
+        if len(self._mid_history) < lookback:
+            return base
+        recent = self._mid_history[-lookback:]
+        hi = max(recent)
+        lo = min(recent)
+        vol = (hi - lo) / mid_price if mid_price > 0 else 0
+        trend_slice = self._mid_history[-trend_lb:]
+        trend = (trend_slice[-1] - trend_slice[0]) / trend_slice[0] if trend_slice[0] > 0 else 0
+        # Widen on volatility; nudge wider on strong trend to reduce adverse selection.
+        spread = base * (1.0 + min(vol * 8.0, 1.5) + min(abs(trend) * 2.0, 0.5))
+        return max(self.cfg.min_spread_pct, spread)
+
+    def _orderbook_imbalance_skew(self, orderbook: Optional[dict] = None) -> float:
+        """Compute additional skew from top book imbalance."""
+        if not getattr(self.cfg, "imbalance_skew_enabled", True):
+            return 0.0
+        try:
+            ob = orderbook or self.client.get_orderbook(limit=10)
+            bids = ob.get("bids", [])[:5]
+            asks = ob.get("asks", [])[:5]
+            bid_vol = sum(float(b.get("quantity", 0)) for b in bids)
+            ask_vol = sum(float(a.get("quantity", 0)) for a in asks)
+            total = bid_vol + ask_vol
+            if total <= 0:
+                return 0.0
+            imbalance = (bid_vol - ask_vol) / total
+            return max(min(imbalance * 0.3, 0.3), -0.3)
+        except Exception:
+            return 0.0
+
+    def _reprice_orders(self, quotes: List[QuoteLevel], mid_price: float) -> None:
+        """Queue-aware refresh: replace only stale quotes."""
+        if not self._active_orders:
+            self._place_orders(quotes)
+            return
+
+        desired = {(q.side, q.level): q for q in quotes}
+        stale = []
+        for oid, old in list(self._active_orders.items()):
+            new = desired.get((old.side, old.level))
+            if new is None:
+                stale.append(oid)
+                continue
+            price_move = abs(new.price - old.price) / old.price if old.price > 0 else 1
+            threshold = max(float(getattr(self.cfg, "queue_reprice_threshold_pct", 0.002)), 0.0001)
+            if price_move > threshold:
+                stale.append(oid)
+
+        for oid in stale:
+            try:
+                self.client.cancel_order(oid)
+                self._active_orders.pop(oid, None)
+                if oid in self._active_order_ids:
+                    self._active_order_ids.remove(oid)
+            except Exception as e:
+                logger.debug("Reprice cancel failed %s: %s", oid, e)
+
+        # place missing/updated orders
+        existing_keys = {(q.side, q.level) for q in self._active_orders.values()}
+        to_place = [q for q in quotes if (q.side, q.level) not in existing_keys]
+        if to_place:
+            self._place_orders(to_place)
+
+    def _record_execution_quality_snapshot(self, mid_price: float) -> None:
+        """Execution quality module from balance-detected fills."""
+        # Placeholder for future exchange fills endpoint integration.
+        pass
 
     # -------------------------------------------------------------------------
     # Order placement
@@ -303,6 +434,7 @@ class MarketMaker:
                 order_id = result.get("id")
                 if order_id:
                     self._active_order_ids.append(order_id)
+                    self._active_orders[order_id] = q
                     placed += 1
                     logger.info(
                         "PLACED  %s L%d  price=%s qty=%s  id=%s",
@@ -337,6 +469,7 @@ class MarketMaker:
 
         logger.info("Cancelled %d / %d tracked orders", cancelled, len(self._active_order_ids))
         self._active_order_ids.clear()
+        self._active_orders.clear()
 
     # -------------------------------------------------------------------------
     # Shutdown
@@ -350,6 +483,7 @@ class MarketMaker:
         except Exception as e:
             logger.error("Error cancelling orders during shutdown: %s", e)
         self._active_order_ids.clear()
+        self._active_orders.clear()
         logger.info("Market Maker stopped. Total cycles: %d", self._cycle_count)
 
 
@@ -373,14 +507,14 @@ class MarketMaker:
             if mewc_delta < -1000 and usdt_delta > 0.01:
                 price = abs(usdt_delta / mewc_delta)
                 fills.append({"side": "SELL", "quantity": abs(mewc_delta), "price": price, "timestamp": datetime.now().isoformat()})
-                self.logger.info(f"🟢 Detected SELL: {abs(mewc_delta):.0f} MEWC @ {price:.8f}")
+                logger.info("🟢 Detected SELL: %.0f MEWC @ %.8f", abs(mewc_delta), price)
             # Detect BUY: MEWC up, USDT down
             elif mewc_delta > 1000 and usdt_delta < -0.01:
                 price = abs(usdt_delta / mewc_delta)
                 fills.append({"side": "BUY", "quantity": mewc_delta, "price": price, "timestamp": datetime.now().isoformat()})
-                self.logger.info(f"🔴 Detected BUY: {mewc_delta:.0f} MEWC @ {price:.8f}")
+                logger.info("🔴 Detected BUY: %.0f MEWC @ %.8f", mewc_delta, price)
         except Exception as e:
-            self.logger.error(f"Fill detection error: {e}")
+            logger.error("Fill detection error: %s", e)
         return fills
 
     def _save_fill_to_db(self, fill: dict):
@@ -395,6 +529,6 @@ class MarketMaker:
                 (fill["timestamp"], fill["side"], fill["quantity"], fill["price"], 0, 0, f"detected_{int(datetime.now().timestamp())}"))
             conn.commit()
             conn.close()
-            self.logger.info(f"💾 Saved fill: {fill['side']} {fill['quantity']:.0f} @ {fill['price']:.8f}")
+            logger.info("💾 Saved fill: %s %.0f @ %.8f", fill["side"], fill["quantity"], fill["price"])
         except Exception as e:
-            self.logger.error(f"Save fill error: {e}")
+            logger.error("Save fill error: %s", e)

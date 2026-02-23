@@ -27,6 +27,8 @@ class DataStore:
                 order_id TEXT
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_order_id ON trades(order_id)")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS portfolio_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +36,7 @@ class DataStore:
                 total_value_usdt REAL NOT NULL
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON portfolio_snapshots(timestamp)")
         self.conn.commit()
     
     def add_trade(self, side: str, quantity: float, price: float, fee: float = 0, order_id: str = None):

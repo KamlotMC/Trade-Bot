@@ -101,6 +101,14 @@
                 <span class="stat-label">P&L (od 7:00)</span>
                 <span class="stat-value" id="portfolioPnL">-</span>
             </div>
+            <div class="stat" style="padding-top: 8px;">
+                <span class="stat-label">Źródło danych</span>
+                <span class="stat-value" id="portfolioSource">-</span>
+            </div>
+            <div class="stat" style="padding-top: 6px;">
+                <span class="stat-label">Uwaga</span>
+                <span class="stat-value" id="portfolioWarning" style="font-size:0.8em;">-</span>
+            </div>
         </div>
 
         <div class="card">
@@ -216,11 +224,12 @@
                     }
                 };
 
-                const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability] = await Promise.all([
+                const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability, execq] = await Promise.all([
                     api('/api/price'), api('/api/portfolio'), api('/api/pnl'),
                     api('/api/pnl-saldo'), api('/api/win-rate'), api('/api/fills'),
                     api('/api/history'), api('/api/open-orders-logs'),
-                    api('/api/errors'), api('/api/bot-status')
+                    api('/api/errors'), api('/api/bot-status'),
+                    api('/api/profitability'), api('/api/execution-quality')
                 ]);
 
                 // Price
@@ -242,6 +251,8 @@
                     document.getElementById('usdtBalance').textContent = fmt(pf.usdt_balance, 2);
                     document.getElementById('usdtValue').textContent = fmt(pf.usdt_balance, 2) + ' USDT';
                     document.getElementById('totalValue').textContent = fmt(pf.total_value_usdt, 2) + ' USDT';
+                    document.getElementById('portfolioSource').textContent = pf.data_source || 'exchange';
+                    document.getElementById('portfolioWarning').textContent = pf.data_warning || 'brak';
                     
                     if (pnlSaldo) {
                         const pnlEl = document.getElementById('portfolioPnL');
@@ -364,6 +375,12 @@
                     document.getElementById('statProfitFactor').textContent = profitability.profit_factor;
                     document.getElementById('statBestTrade').textContent = '+' + fmt(profitability.best_trade_usdt, 4) + ' USDT';
                     document.getElementById('statWorstTrade').textContent = fmt(profitability.worst_trade_usdt, 4) + ' USDT';
+                    document.getElementById('statMethodology').textContent = profitability.methodology || '-';
+                }
+
+                if (execq) {
+                    document.getElementById('statAvgSellPnl').textContent = fmt(execq.avg_realized_pnl_per_sell_usdt, 6) + ' USDT';
+                    document.getElementById('statPositiveSells').textContent = execq.positive_sell_fills;
                 }
 
                 updateStatus(true);
@@ -392,6 +409,9 @@
                 <div class="stat"><span class="stat-label">Net Profit:</span><span class="stat-value" id="statNetProfit">-</span></div>
                 <div class="stat"><span class="stat-label">Avg Trade:</span><span class="stat-value" id="statAvgTrade">-</span></div>
                 <div class="stat"><span class="stat-label">Profit Factor:</span><span class="stat-value" id="statProfitFactor">-</span></div>
+                <div class="stat"><span class="stat-label">Avg SELL PnL:</span><span class="stat-value" id="statAvgSellPnl">-</span></div>
+                <div class="stat"><span class="stat-label">Positive SELL fills:</span><span class="stat-value" id="statPositiveSells">-</span></div>
+                <div class="stat" style="grid-column: span 2;"><span class="stat-label">Metodologia:</span><span class="stat-value" id="statMethodology">-</span></div>
             </div>
         </div>
         <div class="card">

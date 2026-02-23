@@ -182,29 +182,41 @@ async def api_price():
 @app.get("/api/portfolio")
 async def api_portfolio():
     balances_result = api_client.get_balances()
-    
+
+    data_source = "exchange"
+    data_warning = None
+
     if "error" not in balances_result:
         bl = balances_result.get("balances", balances_result) if isinstance(balances_result, dict) else balances_result
         mewc = get_asset_totals(bl, "MEWC")
         usdt = get_asset_totals(bl, "USDT")
     else:
-        print(f"⚠️ Balances API error: {balances_result.get('error')}")
-        mewc, usdt = 1240000, 39.97
-    
+        err = balances_result.get("error") if isinstance(balances_result, dict) else str(balances_result)
+        print(f"⚠️ Balances API error: {err}")
+        data_source = "history_fallback"
+        data_warning = f"Balances unavailable: {err}"
+
+        # Prefer recent total from history to avoid fake hardcoded balances.
+        hist = data_store.get_portfolio_history(7)
+        last_total = hist[-1]["total_value_usdt"] if hist else 0.0
+        mewc, usdt = 0.0, float(last_total)
+
     price_data = get_price_data()
     price = price_data["last_price"] if price_data and price_data["last_price"] > 0 else 0.00003750
     mewc_val = mewc * price
     total = mewc_val + usdt
-    
+
     # Save snapshot
     data_store.add_snapshot(total)
-    
+
     return {
         "mewc_balance": round(mewc, 2),
         "mewc_value_usdt": round(mewc_val, 2),
         "usdt_balance": round(usdt, 2),
         "total_value_usdt": round(total, 2),
-        "mewc_percentage": round((mewc_val / total * 100), 2) if total > 0 else 0
+        "mewc_percentage": round((mewc_val / total * 100), 2) if total > 0 else 0,
+        "data_source": data_source,
+        "data_warning": data_warning,
     }
 
 @app.get("/api/pnl")
@@ -412,7 +424,8 @@ async def get_profitability_stats():
             "avg_trade_profit": 0,
             "best_trade": 0,
             "worst_trade": 0,
-            "profit_factor": 0
+            "profit_factor": 0,
+            "methodology": "Realized FIFO PnL (fees included per fill)",
         }
     
     # Calculate statistics
@@ -448,7 +461,34 @@ async def get_profitability_stats():
         "best_trade_usdt": round(best_trade, 4),
         "worst_trade_usdt": round(worst_trade, 4),
         "profit_factor": round(profit_factor, 2) if profit_factor != float('inf') else "∞",
-        "win_rate_pct": round(len(winning_trades) / len(realized) * 100, 1) if realized else 0
+        "win_rate_pct": round(len(winning_trades) / len(realized) * 100, 1) if realized else 0,
+        # Clear naming for current implementation semantics
+        "gross_profit_after_fees_usdt": round(gross_profit, 4),
+        "net_realized_pnl_after_fees_usdt": round(net_profit, 4),
+        "methodology": "Realized FIFO PnL (fees included per fill)",
+    }
+
+
+@app.get("/api/execution-quality")
+async def api_execution_quality():
+    """Execution quality stats from realized FIFO PnL stream."""
+    trades = data_store.get_trades(1000, 30)
+    enriched = enrich_trades_with_realized_pnl(trades)
+    realized = [sf(t.get("calculated_pnl")) for t in enriched if t.get("calculated_pnl") is not None]
+
+    fills_total = len(trades)
+    sell_fills = len(realized)
+    positive = [p for p in realized if p > 0]
+    negative = [p for p in realized if p < 0]
+
+    return {
+        "fills_total": fills_total,
+        "sell_fills_with_realized_pnl": sell_fills,
+        "positive_sell_fills": len(positive),
+        "negative_sell_fills": len(negative),
+        "avg_realized_pnl_per_sell_usdt": round(sum(realized) / sell_fills, 6) if sell_fills else 0,
+        "median_like_realized_pnl_usdt": round(sorted(realized)[sell_fills // 2], 6) if sell_fills else 0,
+        "methodology": "Realized FIFO PnL (fees included per fill)",
     }
 
 if __name__ == "__main__":

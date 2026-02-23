@@ -8,7 +8,37 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#000; color:#fff; padding:20px; min-height:100vh; }
+    :root {
+      --bg:#05060b;
+      --panel:#121525cc;
+      --panel-border:#ff950042;
+      --accent:#ff9500;
+      --text:#f3f4ff;
+      --muted:#99a0bf;
+    }
+    body {
+      font-family: Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background: radial-gradient(circle at 15% 10%, #21244a 0%, var(--bg) 45%) fixed;
+      color:var(--text);
+      padding:20px;
+      min-height:100vh;
+      position:relative;
+      overflow-x:hidden;
+    }
+    body::before {
+      content:"";
+      position:fixed;
+      inset:-30%;
+      pointer-events:none;
+      background:radial-gradient(circle at 20% 25%, #ff950022, transparent 36%), radial-gradient(circle at 80% 75%, #6c4dff22, transparent 32%);
+      animation:aurora 16s ease-in-out infinite alternate;
+      z-index:-1;
+      filter:blur(24px);
+    }
+    @keyframes aurora {
+      0% { transform:translate3d(-2%, -1%, 0) scale(1); }
+      100% { transform:translate3d(2%, 1%, 0) scale(1.06); }
+    }
     .header { text-align:center; margin-bottom:18px; }
     .header h1 { color:#ff9500; font-weight:300; letter-spacing:2px; text-transform:uppercase; }
     .status-bar { display:inline-flex; gap:30px; margin:10px 0 14px; padding:10px 20px; background:rgba(255,149,0,0.05); border:1px solid rgba(255,149,0,.2); border-radius:6px; }
@@ -19,21 +49,25 @@
     .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
     .tab-btn { border:1px solid rgba(255,149,0,.3); background:rgba(255,149,0,.06); color:#ff9500; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:.85em; }
     .tab-btn.active { background:rgba(255,149,0,.2); border-color:#ff9500; }
-    .tab-panel { display:none; }
-    .tab-panel.active { display:block; }
+    .tab-panel { display:none; opacity:0; transform:translateY(10px); }
+    .tab-panel.active { display:block; animation:panelIn .35s ease forwards; }
+    @keyframes panelIn {
+      to { opacity:1; transform:translateY(0); }
+    }
 
     .grid { display:grid; gap:15px; margin-bottom:15px; }
-    .row-1 { grid-template-columns:repeat(4,1fr); }
+    .row-1 { grid-template-columns:repeat(3,1fr); }
     .row-2 { grid-template-columns:repeat(3,1fr); }
     .row-3 { grid-template-columns:1fr 2fr; }
     .row-4 { grid-template-columns:2fr 1fr; }
     .row-2-even { grid-template-columns:1fr 1fr; }
 
-    .card { background:rgba(255,149,0,.03); border:1px solid rgba(255,149,0,.15); border-radius:8px; padding:18px; }
+    .card { background:var(--panel); border:1px solid var(--panel-border); border-radius:12px; padding:18px; backdrop-filter:blur(8px); box-shadow:0 8px 24px rgba(0,0,0,.25); transition:transform .25s ease,border-color .25s ease; }
+    .card:hover { transform:translateY(-2px); border-color:rgba(255,149,0,.45); }
     .card h2 { color:#ff9500; font-size:.82em; margin-bottom:12px; text-transform:uppercase; letter-spacing:1px; }
     .stat { display:flex; justify-content:space-between; padding:6px 0; font-size:.86em; }
-    .stat-label { color:#707070; }
-    .stat-value { color:#ff9500; font-weight:600; }
+    .stat-label { color:var(--muted); }
+    .stat-value { color:var(--accent); font-weight:600; }
     .positive { color:#34c759; }
     .negative { color:#ff3b30; }
     .price-large { font-size:2em; color:#ff9500; font-weight:300; }
@@ -47,10 +81,10 @@
     .coin-icon.mewc { background:linear-gradient(135deg,#ff6b00,#ff9500); }
     .coin-icon.usdt { background:#26a17b; }
 
-    .order-item { padding:10px; margin:6px 0; border-radius:4px; display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,.4); font-size:.85em; cursor:pointer; }
+    .order-item { padding:10px; margin:6px 0; border-radius:8px; display:flex; justify-content:space-between; align-items:center; background:rgba(8,12,28,.55); font-size:.85em; cursor:pointer; transition:transform .2s ease, background .2s ease; }
     .order-item.buy { border-left:2px solid #34c759; }
     .order-item.sell { border-left:2px solid #ff3b30; }
-    .trade-row:hover, .order-item:hover { background:rgba(255,149,0,.08); }
+    .trade-row:hover, .order-item:hover { background:rgba(255,149,0,.12); transform:translateX(2px); }
     .scroll-box { max-height:300px; overflow-y:auto; padding-right:4px; }
 
     table { width:100%; border-collapse:collapse; font-size:.85em; }
@@ -64,14 +98,39 @@
     .ladder-row.mine { box-shadow:0 0 0 1px #ff9500 inset; }
 
     .input, select { width:100%; margin-top:8px; margin-bottom:10px; padding:8px; border:1px solid rgba(255,149,0,.3); background:#0f0f0f; color:#fff; border-radius:6px; }
-    .btn { border:1px solid rgba(255,149,0,.4); background:rgba(255,149,0,.08); color:#ff9500; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    .btn { border:1px solid rgba(255,149,0,.4); background:rgba(255,149,0,.08); color:#ff9500; padding:8px 12px; border-radius:6px; cursor:pointer; transition:all .2s ease; }
+    .btn:hover { background:rgba(255,149,0,.2); transform:translateY(-1px); }
     .btn.danger { border-color:rgba(255,59,48,.6); color:#ff3b30; background:rgba(255,59,48,.1); }
+    .quick-row { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+    .chip { border:1px solid rgba(255,149,0,.35); color:#ff9500; background:rgba(255,149,0,.06); padding:4px 8px; border-radius:999px; cursor:pointer; font-size:.75em; }
+    .inline-check { display:flex; align-items:center; gap:8px; margin:6px 0 10px; color:var(--muted); font-size:.85em; }
 
     .details-modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:1000; }
     .details-modal.open { display:flex; }
     .modal-card { width:min(92vw,560px); background:#101010; border:1px solid rgba(255,149,0,.4); border-radius:10px; padding:18px; }
     .modal-actions { margin-top:12px; display:flex; justify-content:flex-end; gap:8px; }
     .small-muted { color:#777; font-size:.82em; margin-bottom:8px; }
+    .toast {
+      position:fixed;
+      right:16px;
+      bottom:16px;
+      z-index:1200;
+      background:#14182a;
+      border:1px solid rgba(255,149,0,.4);
+      color:#fff;
+      padding:10px 14px;
+      border-radius:8px;
+      opacity:0;
+      transform:translateY(10px);
+      pointer-events:none;
+      transition:all .2s ease;
+    }
+    .toast.show { opacity:1; transform:translateY(0); }
+
+    @media (max-width: 980px){
+      .row-1,.row-2,.row-3,.row-4,.row-2-even { grid-template-columns:1fr; }
+      body { padding:14px; }
+    }
   </style>
 </head>
 <body>
@@ -79,6 +138,8 @@
     <div class="status-bar">
       <div class="status-item"><div id="statusIndicator" class="status-indicator"></div><span id="statusText">OFFLINE</span></div>
       <div class="status-item"><span>Refresh:</span><span id="countdown" style="color:#ff9500;font-weight:600;">5s</span></div>
+      <div class="status-item"><span>Cycle:</span><span id="botCycle" style="color:#ff9500;font-weight:600;">-</span></div>
+      <div class="status-item"><span>Bot:</span><span id="botSummary" style="color:#99a0bf;">No data</span></div>
     </div>
     <h1>MEWC Trading Center</h1>
   </div>
@@ -119,6 +180,8 @@
         <div class="stat"><span class="stat-label">P&L (since 7:00)</span><span id="portfolioPnL" class="stat-value">-</span></div>
       </div>
       <div class="card" id="pnlDailyCard"><h2>Daily P&L</h2><div id="pnlDaily" class="price-large">-</div><div class="stat"><span class="stat-label">Trades</span><span id="tradesDaily" class="stat-value">-</span></div></div>
+      <div class="card"><h2>Weekly P&L</h2><div id="pnlWeekly" class="price-large">-</div><div class="stat"><span class="stat-label">Trades</span><span id="tradesWeekly" class="stat-value">-</span></div></div>
+      <div class="card"><h2>Monthly P&L</h2><div id="pnlMonthly" class="price-large">-</div><div class="stat"><span class="stat-label">Trades</span><span id="tradesMonthly" class="stat-value">-</span></div></div>
       <div class="card"><h2>Win Rate</h2><div id="winRate" class="price-large">-</div><div class="stat"><span class="stat-label">Total</span><span id="totalTrades" class="stat-value">-</span></div></div>
     </div>
     <div class="grid row-3">
@@ -138,10 +201,20 @@
         <select id="manualSide"><option>BUY</option><option>SELL</option></select>
         <select id="manualType"><option>MARKET</option><option>LIMIT</option></select>
         <input id="manualQty" class="input" type="number" step="0.0001" placeholder="Quantity" />
+        <div class="quick-row">
+          <button class="chip" onclick="setQuickQty(25)">25%</button>
+          <button class="chip" onclick="setQuickQty(50)">50%</button>
+          <button class="chip" onclick="setQuickQty(75)">75%</button>
+          <button class="chip" onclick="setQuickQty(100)">100%</button>
+        </div>
         <input id="manualPrice" class="input" type="number" step="0.00000001" placeholder="Limit price (only for LIMIT)" />
+        <label class="inline-check"><input id="manualReduceOnly" type="checkbox" /> Reduce-only</label>
+        <label class="inline-check"><input id="manualConfirmMode" type="checkbox" /> Confirm mode (large orders)</label>
+        <div id="manualValidation" class="small-muted" style="margin-top:4px;"></div>
         <div style="display:flex;gap:8px;">
           <button class="btn" onclick="submitManualOrder()">Submit order</button>
           <button class="btn danger" onclick="cancelAllOrders()">Cancel all</button>
+          <button class="btn" onclick="syncTradesFromExchange()">Sync trades</button>
         </div>
         <div id="manualOrderResult" class="small-muted" style="margin-top:10px;"></div>
       </div>
@@ -165,15 +238,28 @@
         <div class="stat"><span class="stat-label">Inventory ratio</span><span id="riskInventory" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Target ratio</span><span id="riskTarget" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Skew</span><span id="riskSkew" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Drawdown</span><span id="riskDrawdown" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Session DD</span><span id="riskDrawdown" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Day DD</span><span id="riskDayDd" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Week DD</span><span id="riskWeekDd" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Exposure</span><span id="riskExposure" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Hard guard</span><span id="riskGuard" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Risk state</span><span id="riskState" class="stat-value">-</span></div>
       </div>
       <div class="card">
         <h2><i class="fas fa-chart-line"></i> Live PnL / Equity</h2>
-        <div class="stat"><span class="stat-label">Net profit</span><span id="liveNetProfit" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Gross profit</span><span id="liveGrossProfit" class="stat-value">-</span></div>
+        <div class="quick-row">
+          <button class="chip" onclick="setPnlFilter('today')">today</button>
+          <button class="chip" onclick="setPnlFilter('7d')">7d</button>
+          <button class="chip" onclick="setPnlFilter('30d')">30d</button>
+        </div>
+        <input id="pnlSymbol" class="input" value="MEWC_USDT" placeholder="symbol" />
+        <input id="pnlStrategy" class="input" value="default" placeholder="strategy" />
+        <div class="stat"><span class="stat-label">Unrealized</span><span id="liveUnrealized" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Realized</span><span id="liveRealized" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Fees</span><span id="liveFees" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">Net</span><span id="liveNetProfit" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Profit factor</span><span id="livePf" class="stat-value">-</span></div>
+        <canvas id="intradayCurve" height="110"></canvas>
       </div>
     </div>
   </section>
@@ -189,7 +275,14 @@
         <input id="ruleName" class="input" placeholder="Nazwa" />
         <input id="ruleCondition" class="input" placeholder="Warunek (np. spread_pct > 0.7)" />
         <input id="ruleAction" class="input" placeholder="Akcja (np. pause_quotes)" />
+        <h2 style="margin-top:10px"><i class="fas fa-sitemap"></i> IF / THEN builder</h2>
+        <select id="ifType"><option value="spread">spread</option><option value="volatility">volatility</option><option value="skew">skew</option><option value="pnl_threshold">pnl_threshold</option><option value="time_window">time_window</option></select>
+        <select id="ifOperator"><option value=">">&gt;</option><option value="<">&lt;</option><option value=">=">&gt;=</option><option value="<=">&lt;=</option><option value="==">==</option></select>
+        <input id="ifValue" class="input" placeholder="value" />
+        <select id="thenAction"><option value="pause_bot">pause bot</option><option value="reduce_size">reduce size</option><option value="cancel_all">cancel all</option><option value="hedge_order">hedge order</option><option value="notify">notify</option></select>
+        <input id="ruleWindow" class="input" placeholder="time window (np. 07:00-22:00)" />
         <button class="btn" onclick="addAutomationRule()">Dodaj</button>
+        <button class="btn" onclick="addBuilderRule()">Add IF/THEN</button>
       </div>
     </div>
   </section>
@@ -202,6 +295,11 @@
         <div class="stat"><span class="stat-label">Positive sells</span><span id="execPositive" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Negative sells</span><span id="execNegative" class="stat-value">-</span></div>
         <div class="stat"><span class="stat-label">Avg realized pnl</span><span id="execAvgPnl" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">p50/p95/p99</span><span id="execPercentiles" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">post→ack</span><span id="execPostAck" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">ack→first fill</span><span id="execAckFill" class="stat-value">-</span></div>
+        <div class="stat"><span class="stat-label">lifetime</span><span id="execLifetime" class="stat-value">-</span></div>
+        <div id="execHistogram" class="scroll-box"></div>
       </div>
       <div class="card">
         <h2><i class="fas fa-project-diagram"></i> Order Lifecycle</h2>
@@ -213,6 +311,10 @@
   <section id="tab-backtest" class="tab-panel">
     <div class="card">
       <h2><i class="fas fa-vial"></i> Backtest & Replay Summary</h2>
+      <input id="btDatasetInput" class="input" placeholder="dataset name" />
+      <input id="btCandlesInput" class="input" type="number" placeholder="candles" />
+      <div style="display:flex;gap:8px;"><button class="btn" onclick="importBacktestData()">Import data</button><button class="btn" onclick="compareConfigs()">Compare A/B</button></div>
+      <div id="btCompare" class="small-muted" style="margin:8px 0;"></div>
       <div class="stat"><span class="stat-label">Dataset</span><span id="btDataset" class="stat-value">-</span></div>
       <div class="stat"><span class="stat-label">Simulated trades</span><span id="btTrades" class="stat-value">-</span></div>
       <div class="stat"><span class="stat-label">Net PnL</span><span id="btPnl" class="stat-value">-</span></div>
@@ -226,6 +328,8 @@
     <div class="card">
       <h2><i class="fas fa-book"></i> Strategy Journal (AI/Strategy Trace)</h2>
       <div id="journalList" class="scroll-box"></div>
+      <h2 style="margin-top:10px"><i class="fas fa-search"></i> Reason Trace</h2>
+      <div id="reasonTraceList" class="scroll-box"></div>
     </div>
   </section>
 
@@ -239,9 +343,11 @@
       </div>
     </div>
   </div>
+  <div id="toast" class="toast"></div>
 
   <script>
-    let chart = null, countdown = 5, lastConn = false;
+    let chart = null, intradayChart = null, countdown = 5, lastConn = false;
+    let pnlFilter = "today";
     let currentOrders = [], currentTrades = [];
 
     function fmt(n, d=2){ if(n===null||n===undefined||isNaN(n)) return '-'; return Number(n).toLocaleString('pl-PL',{minimumFractionDigits:d, maximumFractionDigits:d}); }
@@ -265,21 +371,81 @@
       catch(e){ console.error(`API error ${url}:`, e); return null; }
     }
 
+    function toast(message){
+      const el = document.getElementById('toast');
+      el.textContent = message;
+      el.classList.add('show');
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
+    }
+
+    function normalizeTime(ts){
+      const d = ts ? new Date(ts) : null;
+      return d && !isNaN(d.getTime()) ? d.toLocaleTimeString() : '-';
+    }
+
+
+    function setQuickQty(percent){
+      const usdtTxt = (document.getElementById('usdtBalance')?.textContent||'0').replace(/\s/g,'').replace(',','.');
+      const usdt = Number(usdtTxt) || 0;
+      const pTxt = (document.getElementById('price')?.textContent||'0').replace(',','.');
+      const px = Number(pTxt) || 0.0000375;
+      const qty = (usdt * (percent/100)) / px;
+      document.getElementById('manualQty').value = Number.isFinite(qty) ? qty.toFixed(2) : '';
+      preflightManualOrder();
+    }
+
+    function setPnlFilter(windowKey){ pnlFilter = windowKey; update(); }
+
+    async function preflightManualOrder(){
+      const payload = {
+        side: document.getElementById('manualSide').value,
+        type: document.getElementById('manualType').value,
+        quantity: Number(document.getElementById('manualQty').value),
+        price: Number(document.getElementById('manualPrice').value),
+        reduce_only: document.getElementById('manualReduceOnly').checked
+      };
+      const pre = await api('/api/orders/preflight', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      const t = pre ? `minQty ${pre.min_qty} | minNotional ${pre.min_notional_usdt} | estNotional ${fmt(pre.estimated_notional_usdt,4)} | fee ${fmt(pre.estimated_fee_usdt,6)} ${pre.confirm_required ? '| confirm required' : ''} ${(pre.errors||[]).join(' ')}` : 'Preflight failed';
+      document.getElementById('manualValidation').textContent = t;
+      return pre;
+    }
+
     async function submitManualOrder(){
       const payload = {
         side: document.getElementById('manualSide').value,
         type: document.getElementById('manualType').value,
         quantity: Number(document.getElementById('manualQty').value),
-        price: Number(document.getElementById('manualPrice').value)
+        price: Number(document.getElementById('manualPrice').value),
+        reduce_only: document.getElementById('manualReduceOnly').checked
       };
+      const pre = await preflightManualOrder();
+      if(pre?.confirm_required && !document.getElementById('manualConfirmMode').checked){
+        toast('Duże zlecenie: włącz confirm mode');
+        document.getElementById('manualOrderResult').textContent = 'Large order blocked: enable confirm mode.';
+        return;
+      }
+      if(pre?.confirm_required){ payload.confirm_token = pre.confirm_token; }
       const res = await api('/api/orders/manual', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
       document.getElementById('manualOrderResult').textContent = res ? JSON.stringify(res).slice(0,180) : 'Order submission error';
+      toast(res?.ok ? 'Zlecenie wysłane' : 'Błąd wysyłki zlecenia');
       update();
     }
 
     async function cancelAllOrders(){
       const res = await api('/api/orders/cancel-all', {method:'POST'});
       document.getElementById('manualOrderResult').textContent = res ? JSON.stringify(res).slice(0,180) : 'Cancel-all error';
+      toast(res?.ok ? 'Anulowano wszystkie zlecenia' : 'Nie udało się anulować zleceń');
+      update();
+    }
+
+
+    async function syncTradesFromExchange(){
+      const res = await api('/api/trades/sync-from-exchange', {method:'POST'});
+      const ok = res && res.status === 'success';
+      const msg = ok ? `Zsynchronizowano: ${res.added||0} nowych tradeów` : (res?.message || 'Błąd synchronizacji tradeów');
+      document.getElementById('manualOrderResult').textContent = msg;
+      toast(msg);
       update();
     }
 
@@ -291,7 +457,47 @@
       };
       await api('/api/automation-rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
       document.getElementById('ruleName').value=''; document.getElementById('ruleCondition').value=''; document.getElementById('ruleAction').value='';
+      toast('Dodano regułę automatyzacji');
       update();
+    }
+
+
+    async function addBuilderRule(){
+      const payload = {
+        name: document.getElementById('ruleName').value || 'Builder Rule',
+        if: {
+          type: document.getElementById('ifType').value,
+          operator: document.getElementById('ifOperator').value,
+          value: document.getElementById('ifValue').value
+        },
+        then: { action: document.getElementById('thenAction').value },
+        time_window: document.getElementById('ruleWindow').value || 'always'
+      };
+      const res = await api('/api/automation-rules/builder', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      toast(res?.ok ? 'Dodano regułę IF/THEN' : 'Błąd reguły IF/THEN');
+      update();
+    }
+
+    async function importBacktestData(){
+      const payload = {dataset: document.getElementById('btDatasetInput').value || 'manual_dataset', candles: Number(document.getElementById('btCandlesInput').value || 0)};
+      const res = await api('/api/backtest/import', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      document.getElementById('btCompare').textContent = res ? `Import: ${res.dataset}, candles=${res.candles}` : 'Import failed';
+    }
+
+    async function compareConfigs(){
+      const res = await api('/api/backtest/compare');
+      if(!res) return;
+      document.getElementById('btCompare').textContent = `A PF ${res.config_a.profit_factor}, B PF ${res.config_b.profit_factor}, better: ${res.better}`;
+    }
+
+    function syncManualOrderType(){
+      const orderType = document.getElementById('manualType').value;
+      const priceInput = document.getElementById('manualPrice');
+      const enabled = orderType === 'LIMIT';
+      priceInput.disabled = !enabled;
+      if(!enabled) priceInput.value = '';
+      priceInput.placeholder = enabled ? 'Limit price' : 'Price disabled for market order';
+      priceInput.style.opacity = enabled ? '1' : '.55';
     }
 
     function closeModal(){ document.getElementById('detailsModal').classList.remove('open'); document.getElementById('modalActionBtn').style.display='none'; }
@@ -314,10 +520,10 @@
 
     async function update(){
       try {
-        const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability, execq, orderbook, risk, lifecycle, rules, backtest, journal] = await Promise.all([
+        const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability, execq, orderbook, risk, lifecycle, rules, backtest, journal, livePnl, lifeMetrics, reasonTrace] = await Promise.all([
           api('/api/price'), api('/api/portfolio'), api('/api/pnl'), api('/api/pnl-saldo'), api('/api/win-rate'), api('/api/fills'),
           api('/api/history'), api('/api/open-orders'), api('/api/errors'), api('/api/bot-status'), api('/api/profitability'), api('/api/execution-quality'),
-          api('/api/orderbook'), api('/api/risk-cockpit'), api('/api/order-lifecycle'), api('/api/automation-rules'), api('/api/backtest-replay-summary'), api('/api/strategy-journal')
+          api('/api/orderbook'), api('/api/risk-cockpit'), api('/api/order-lifecycle'), api('/api/automation-rules'), api('/api/backtest-replay-summary'), api('/api/strategy-journal'), api(`/api/live-pnl?window=${encodeURIComponent(pnlFilter)}&symbol=${encodeURIComponent(document.getElementById('pnlSymbol')?.value||'MEWC_USDT')}&strategy=${encodeURIComponent(document.getElementById('pnlStrategy')?.value||'default')}`), api('/api/order-lifecycle-metrics'), api('/api/strategy-reason-trace?limit=30')
         ]);
 
         if (p){ document.getElementById('price').textContent = price(p.last_price); document.getElementById('bid').textContent=price(p.bid); document.getElementById('ask').textContent=price(p.ask); document.getElementById('volume').textContent=fmt(p.usd_volume_est,0)+' USDT'; const cv=parseFloat(p.change_percent)||0; const ch=document.getElementById('priceChange'); ch.textContent=(cv>=0?'+':'')+p.change_percent+'%'; ch.className=cv>=0?'positive':'negative'; }
@@ -330,7 +536,7 @@
         document.getElementById('ordersList').innerHTML = currentOrders.length ? currentOrders.map((o,idx)=>`<div class='order-item ${(o.side||'').toLowerCase()}' onclick='showOrderDetails(${idx})'><strong>${(o.side||'').toUpperCase()}</strong><span>${fmtInt(o.remaining||o.quantity)} MEWC</span><span style='color:#ff9500'>${price(o.price)} USDT</span></div>`).join('') : '<span style="color:#777">No open orders</span>';
 
         currentTrades = Array.isArray(fills)?fills:[];
-        document.getElementById('tradesTable').innerHTML = currentTrades.length ? currentTrades.map((t,idx)=>{ const pnlVal=t.calculated_pnl!==null&&t.calculated_pnl!==undefined?t.calculated_pnl:(t.pnl||null); const pnlCls=pnlVal!==null?(pnlVal>=0?'positive':'negative'):''; return `<tr class='trade-row' onclick='showTradeDetails(${idx})'><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td class='${(t.side||'').toLowerCase()}'>${(t.side||'').toUpperCase()}</td><td>${fmtInt(t.quantity)}</td><td>${price(t.price)}</td><td class='${pnlCls}'>${pnlVal!==null?fmt(pnlVal,4):'-'}</td></tr>`; }).join('') : '<tr><td colspan="5" style="color:#777">No trades</td></tr>';
+        document.getElementById('tradesTable').innerHTML = currentTrades.length ? currentTrades.map((t,idx)=>{ const pnlVal=t.calculated_pnl!==null&&t.calculated_pnl!==undefined?t.calculated_pnl:(t.pnl||null); const pnlCls=pnlVal!==null?(pnlVal>=0?'positive':'negative'):''; return `<tr class='trade-row' onclick='showTradeDetails(${idx})'><td>${normalizeTime(t.timestamp)}</td><td class='${(t.side||'').toLowerCase()}'>${(t.side||'').toUpperCase()}</td><td>${fmtInt(t.quantity)}</td><td>${price(t.price)}</td><td class='${pnlCls}'>${pnlVal!==null?fmt(pnlVal,4):'-'}</td></tr>`; }).join('') : '<tr><td colspan="5" style="color:#777">No trades</td></tr>';
 
         document.getElementById('errorsList').innerHTML = errors && errors.length ? errors.slice(0,8).map(e=>`<div class='stat'><span class='stat-label'>•</span><span class='stat-value'>${e}</span></div>`).join('') : '<span style="color:#34c759">No errors</span>';
 
@@ -338,22 +544,33 @@
 
         if (hist && hist.length){ if(chart) chart.destroy(); chart = new Chart(document.getElementById('portfolioChart'), { type:'line', data:{ labels:hist.map(h=>new Date(h.timestamp).toLocaleDateString()), datasets:[{ data:hist.map(h=>h.total_value_usdt), borderColor:'#ff9500', backgroundColor:'rgba(255,149,0,.1)', fill:true, pointRadius:0, tension:.35 }]}, options:{ plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#666'}}, y:{ticks:{color:'#666'}} } } }); }
 
-        if (profitability){ document.getElementById('liveNetProfit').textContent=(profitability.net_profit_usdt>=0?'+':'')+fmt(profitability.net_profit_usdt,4)+' USDT'; document.getElementById('liveGrossProfit').textContent='+'+fmt(profitability.gross_profit_usdt,4)+' USDT'; document.getElementById('liveFees').textContent=fmt(profitability.total_fees_usdt,4)+' USDT'; document.getElementById('livePf').textContent=profitability.profit_factor; }
-        if (risk){ document.getElementById('riskInventory').textContent=fmt(risk.inventory_ratio*100,2)+'%'; document.getElementById('riskTarget').textContent=fmt(risk.target_ratio*100,2)+'%'; document.getElementById('riskSkew').textContent=fmt(risk.current_skew,4); document.getElementById('riskDrawdown').textContent=fmt(risk.drawdown_pct,2)+'%'; document.getElementById('riskState').textContent=risk.risk_state||'-'; }
+        if (profitability){ document.getElementById('livePf').textContent=profitability.profit_factor; }
+        if (livePnl){ document.getElementById('liveUnrealized').textContent=(livePnl.unrealized_usdt>=0?'+':'')+fmt(livePnl.unrealized_usdt,4)+' USDT'; document.getElementById('liveRealized').textContent=(livePnl.realized_usdt>=0?'+':'')+fmt(livePnl.realized_usdt,4)+' USDT'; document.getElementById('liveFees').textContent=fmt(livePnl.fees_usdt,4)+' USDT'; document.getElementById('liveNetProfit').textContent=(livePnl.net_usdt>=0?'+':'')+fmt(livePnl.net_usdt,4)+' USDT'; if(livePnl.equity_curve && livePnl.equity_curve.length){ if(intradayChart) intradayChart.destroy(); intradayChart = new Chart(document.getElementById('intradayCurve'), {type:'line', data:{labels:livePnl.equity_curve.map(x=>normalizeTime(x.timestamp)), datasets:[{data:livePnl.equity_curve.map(x=>x.equity), borderColor:'#8f7dff', pointRadius:0, tension:.3}]}, options:{plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#666'}}, y:{ticks:{color:'#666'}}}}}); } }
+        if (risk){ document.getElementById('riskInventory').textContent=fmt(risk.inventory_ratio*100,2)+'%'; document.getElementById('riskTarget').textContent=fmt(risk.target_ratio*100,2)+'%'; document.getElementById('riskSkew').textContent=fmt(risk.current_skew,4); document.getElementById('riskDrawdown').textContent=fmt(risk.session_drawdown_pct ?? risk.drawdown_pct,2)+'%'; document.getElementById('riskDayDd').textContent=fmt(risk.day_drawdown_pct,2)+'%'; document.getElementById('riskWeekDd').textContent=fmt(risk.week_drawdown_pct,2)+'%'; document.getElementById('riskExposure').textContent=fmt(risk.inventory_exposure_pct ?? risk.inventory_ratio*100,2)+'%'; document.getElementById('riskGuard').textContent=risk.hard_limit_guard ? 'ON' : 'OFF'; document.getElementById('riskState').textContent=risk.risk_state||'-'; }
         if (execq){ document.getElementById('execFills').textContent=execq.fills_total; document.getElementById('execPositive').textContent=execq.positive_sell_fills; document.getElementById('execNegative').textContent=execq.negative_sell_fills; document.getElementById('execAvgPnl').textContent=fmt(execq.avg_realized_pnl_per_sell_usdt,6)+' USDT'; }
+        if (lifeMetrics){ document.getElementById('execPercentiles').textContent=`${fmt(lifeMetrics.p50_sec,3)}/${fmt(lifeMetrics.p95_sec,3)}/${fmt(lifeMetrics.p99_sec,3)}s`; document.getElementById('execPostAck').textContent=fmt(lifeMetrics.post_to_ack_avg_sec,3)+'s'; document.getElementById('execAckFill').textContent=fmt(lifeMetrics.ack_to_first_fill_avg_sec,3)+'s'; document.getElementById('execLifetime').textContent=fmt(lifeMetrics.total_lifetime_avg_sec,3)+'s'; document.getElementById('execHistogram').innerHTML = (lifeMetrics.histogram||[]).map(h=>`<div class='stat'><span class='stat-label'>${h.bucket}</span><span class='stat-value'>${h.count}</span></div>`).join(''); }
 
         document.getElementById('lifecycleList').innerHTML = lifecycle && lifecycle.length ? lifecycle.slice(0,50).map(i=>`<div class='stat'><span class='stat-label'>${i.event||'-'}</span><span class='stat-value'>${i.order_id||'-'} @ ${i.price||'-'}</span></div>`).join('') : '<span style="color:#777">No lifecycle events</span>';
         document.getElementById('automationRules').innerHTML = rules && rules.length ? rules.map(r=>`<div class='stat'><span class='stat-label'>${r.name}</span><span class='stat-value'>${r.condition} → ${r.action}</span></div>`).join('') : '<span style="color:#777">No rules</span>';
 
         if (backtest){ document.getElementById('btDataset').textContent=backtest.dataset; document.getElementById('btTrades').textContent=backtest.simulated_trades; document.getElementById('btPnl').textContent=fmt(backtest.net_pnl_usdt,4)+' USDT'; document.getElementById('btPf').textContent=backtest.profit_factor; document.getElementById('btDd').textContent=fmt(backtest.max_drawdown_pct,2)+'%'; document.getElementById('btReady').textContent=backtest.replay_ready?'yes':'no'; }
         document.getElementById('journalList').innerHTML = journal && journal.length ? journal.map(j=>`<div class='stat'><span class='stat-label'>${j.timestamp||''}</span><span class='stat-value'>${j.message||''}</span></div>`).join('') : '<span style="color:#777">No journal entries</span>';
+        document.getElementById('reasonTraceList').innerHTML = reasonTrace && reasonTrace.length ? reasonTrace.map(r=>`<div class='stat'><span class='stat-label'>${r.signal} / ${r.risk_decision}</span><span class='stat-value'>${r.final_action}</span></div>`).join('') : '<span style="color:#777">No reason trace</span>';
 
-        if (bot){ }
+        if (bot){
+          const cycle = bot.last_cycle || "-";
+          document.getElementById('botCycle').textContent = cycle;
+          const summary = `mid ${price(bot.last_mid_price)} | skew ${fmt(bot.last_skew,4)} | bids ${bot.active_bids||0} / asks ${bot.active_asks||0}`;
+          document.getElementById('botSummary').textContent = summary;
+        }
         updateStatus(true); countdown = 5;
       } catch(e){ console.error('Update error:', e); updateStatus(false); }
     }
 
     update();
+    syncManualOrderType();
+    document.getElementById('manualType').addEventListener('change', syncManualOrderType);
+    ['manualQty','manualPrice','manualSide','manualType','manualReduceOnly'].forEach(id=>document.getElementById(id).addEventListener('change', preflightManualOrder));
     setInterval(update, 5000);
     setInterval(updateCountdown, 1000);
   </script>

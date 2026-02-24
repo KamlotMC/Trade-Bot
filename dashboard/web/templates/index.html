@@ -427,6 +427,24 @@
       return d && !isNaN(d.getTime()) ? d.toLocaleTimeString() : '-';
     }
 
+    function normalizeRows(payload, keyCandidates=[]){
+      if (Array.isArray(payload)) return payload;
+      if (!payload || typeof payload !== 'object') return [];
+      for (const key of keyCandidates){
+        const v = payload[key];
+        if (Array.isArray(v)) return v;
+      }
+      return [];
+    }
+
+    function normalizeHistory(payload){
+      return normalizeRows(payload, ['history', 'data', 'items', 'rows']);
+    }
+
+    function normalizeFills(payload){
+      return normalizeRows(payload, ['fills', 'trades', 'data', 'items', 'rows']);
+    }
+
 
     function setQuickQty(percent){
       const usdtTxt = (document.getElementById('usdtBalance')?.textContent||'0').replace(/\s/g,'').replace(',','.');
@@ -594,7 +612,15 @@
       const t = currentTrades[idx]; if(!t) return;
       const pnlVal = t.calculated_pnl!==null&&t.calculated_pnl!==undefined ? t.calculated_pnl : (t.pnl||null);
       openModal('Trade details', `<div class='stat'><span class='stat-label'>Trade ID</span><span class='stat-value'>${t.id||'-'}</span></div><div class='stat'><span class='stat-label'>Side</span><span class='stat-value'>${t.side||'-'}</span></div><div class='stat'><span class='stat-label'>Qty</span><span class='stat-value'>${fmtInt(t.quantity)}</span></div><div class='stat'><span class='stat-label'>P&L</span><span class='stat-value'>${pnlVal!==null?fmt(pnlVal,4):'-'}</span></div>`);
-      const btn=document.getElementById('modalActionBtn'); btn.style.display='inline-block'; btn.textContent='Close position';
+      const btn = document.getElementById('modalActionBtn');
+      const canClose = String(t.side || '').toUpperCase() === 'BUY';
+      if (!canClose){
+        btn.style.display = 'none';
+        btn.onclick = null;
+        return;
+      }
+      btn.style.display='inline-block';
+      btn.textContent='Close BUY position';
       btn.onclick = async()=>{ await api('/api/trades/'+encodeURIComponent(t.id)+'/close', {method:'POST'}); closeModal(); update(); };
     }
 
@@ -622,17 +648,17 @@
         currentOrders = Array.isArray(orders)?orders:[];
         document.getElementById('ordersList').innerHTML = currentOrders.length ? currentOrders.map((o,idx)=>`<div class='order-item ${(o.side||'').toLowerCase()}' onclick='showOrderDetails(${idx})'><strong>${(o.side||'').toUpperCase()}</strong><span>${fmtInt(o.remaining||o.quantity)} MEWC</span><span style='color:#ff9500'>${price(o.price)} USDT</span></div>`).join('') : '<span style="color:#777">No open orders</span>';
 
-        currentTrades = Array.isArray(fills)?fills:[];
+        currentTrades = normalizeFills(fills);
         document.getElementById('tradesTable').innerHTML = currentTrades.length ? currentTrades.map((t,idx)=>{ const pnlVal=t.calculated_pnl!==null&&t.calculated_pnl!==undefined?t.calculated_pnl:(t.pnl||null); const pnlCls=pnlVal!==null?(pnlVal>=0?'positive':'negative'):''; return `<tr class='trade-row' onclick='showTradeDetails(${idx})'><td>${normalizeTime(t.timestamp)}</td><td class='${(t.side||'').toLowerCase()}'>${(t.side||'').toUpperCase()}</td><td>${fmtInt(t.quantity)}</td><td>${price(t.price)}</td><td class='${pnlCls}'>${pnlVal!==null?fmt(pnlVal,4):'-'}</td></tr>`; }).join('') : '<tr><td colspan="5" style="color:#777">No trades</td></tr>';
 
         document.getElementById('errorsList').innerHTML = errors && errors.length ? errors.slice(0,8).map(e=>`<div class='stat'><span class='stat-label'>•</span><span class='stat-value'>${e}</span></div>`).join('') : '<span style="color:#34c759">No errors</span>';
 
         if (orderbook){ const my = new Set(currentOrders.map(o=>Number(o.price).toFixed(8))); const asks=(orderbook.asks||[]).slice(0,10).reverse(); const bids=(orderbook.bids||[]).slice(0,10); const rows=asks.map(a=>({...a,side:'ask'})).concat(bids.map(b=>({...b,side:'bid'}))); document.getElementById('orderbookLadder').innerHTML = rows.map(r=>`<div class='ladder-row ${r.side} ${my.has(Number(r.price).toFixed(8))?'mine':''}'><span>${price(r.price)}</span><span>${fmtInt(r.quantity)} MEWC</span></div>`).join(''); }
 
-        if (hist && hist.length){ const labels = hist.map(h=>new Date(h.timestamp).toLocaleDateString()); const values = hist.map(h=>h.total_value_usdt); const nextHash = stableHash([labels, values]); if (force || nextHash !== portfolioHistHash){ portfolioHistHash = nextHash; chart = upsertLineChart(chart, 'portfolioChart', labels, values, '#ff9500', 'rgba(255,149,0,.1)'); } }
+        const histRows = normalizeHistory(hist); if (histRows.length){ const labels = histRows.map(h=>new Date(h.timestamp).toLocaleString()); const values = histRows.map(h=>Number(h.total_value_usdt)||0); const nextHash = stableHash([labels, values]); if (force || !chart || nextHash !== portfolioHistHash){ const nextChart = upsertLineChart(chart, 'portfolioChart', labels, values, '#ff9500', 'rgba(255,149,0,.1)'); if (nextChart){ chart = nextChart; portfolioHistHash = nextHash; } } }
 
         if (profitability){ document.getElementById('livePf').textContent=profitability.profit_factor; }
-        if (livePnl){ document.getElementById('liveUnrealized').textContent=(livePnl.unrealized_usdt>=0?'+':'')+fmt(livePnl.unrealized_usdt,4)+' USDT'; document.getElementById('liveRealized').textContent=(livePnl.realized_usdt>=0?'+':'')+fmt(livePnl.realized_usdt,4)+' USDT'; document.getElementById('liveFees').textContent=fmt(livePnl.fees_usdt,4)+' USDT'; document.getElementById('liveNetProfit').textContent=(livePnl.net_usdt>=0?'+':'')+fmt(livePnl.net_usdt,4)+' USDT'; if(livePnl.equity_curve && livePnl.equity_curve.length){ const labels = livePnl.equity_curve.map(x=>normalizeTime(x.timestamp)); const values = livePnl.equity_curve.map(x=>x.equity); const nextHash = stableHash([labels, values]); if (force || nextHash !== intradayHash){ intradayHash = nextHash; intradayChart = upsertLineChart(intradayChart, 'intradayCurve', labels, values, '#8f7dff'); } } }
+        if (livePnl){ document.getElementById('liveUnrealized').textContent=(livePnl.unrealized_usdt>=0?'+':'')+fmt(livePnl.unrealized_usdt,4)+' USDT'; document.getElementById('liveRealized').textContent=(livePnl.realized_usdt>=0?'+':'')+fmt(livePnl.realized_usdt,4)+' USDT'; document.getElementById('liveFees').textContent=fmt(livePnl.fees_usdt,4)+' USDT'; document.getElementById('liveNetProfit').textContent=(livePnl.net_usdt>=0?'+':'')+fmt(livePnl.net_usdt,4)+' USDT'; if(livePnl.equity_curve && livePnl.equity_curve.length){ const labels = livePnl.equity_curve.map(x=>normalizeTime(x.timestamp)); const values = livePnl.equity_curve.map(x=>Number(x.equity)||0); const nextHash = stableHash([labels, values]); if (force || !intradayChart || nextHash !== intradayHash){ const nextIntraday = upsertLineChart(intradayChart, 'intradayCurve', labels, values, '#8f7dff'); if (nextIntraday){ intradayChart = nextIntraday; intradayHash = nextHash; } } } }
         if (risk){ document.getElementById('riskInventory').textContent=fmt(risk.inventory_ratio*100,2)+'%'; document.getElementById('riskTarget').textContent=fmt(risk.target_ratio*100,2)+'%'; document.getElementById('riskSkew').textContent=fmt(risk.current_skew,4); document.getElementById('riskDrawdown').textContent=fmt(risk.session_drawdown_pct ?? risk.drawdown_pct,2)+'%'; document.getElementById('riskDayDd').textContent=fmt(risk.day_drawdown_pct,2)+'%'; document.getElementById('riskWeekDd').textContent=fmt(risk.week_drawdown_pct,2)+'%'; document.getElementById('riskExposure').textContent=fmt(risk.inventory_exposure_pct ?? risk.inventory_ratio*100,2)+'%'; document.getElementById('riskGuard').textContent=risk.hard_limit_guard ? 'ON' : 'OFF'; document.getElementById('riskState').textContent=risk.risk_state||'-'; }
         if (execq){ document.getElementById('execFills').textContent=execq.fills_total; document.getElementById('execPositive').textContent=execq.positive_sell_fills; document.getElementById('execNegative').textContent=execq.negative_sell_fills; document.getElementById('execAvgPnl').textContent=fmt(execq.avg_realized_pnl_per_sell_usdt,6)+' USDT'; }
         if (lifeMetrics){ document.getElementById('execPercentiles').textContent=`${fmt(lifeMetrics.p50_sec,3)}/${fmt(lifeMetrics.p95_sec,3)}/${fmt(lifeMetrics.p99_sec,3)}s`; document.getElementById('execPostAck').textContent=fmt(lifeMetrics.post_to_ack_avg_sec,3)+'s'; document.getElementById('execAckFill').textContent=fmt(lifeMetrics.ack_to_first_fill_avg_sec,3)+'s'; document.getElementById('execLifetime').textContent=fmt(lifeMetrics.total_lifetime_avg_sec,3)+'s'; document.getElementById('execHistogram').innerHTML = (lifeMetrics.histogram||[]).map(h=>`<div class='stat'><span class='stat-label'>${h.bucket}</span><span class='stat-value'>${h.count}</span></div>`).join(''); }

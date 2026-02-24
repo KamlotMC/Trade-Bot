@@ -12,8 +12,9 @@ from backend.data_store import DataStore
 from backend.calculator import PnLCalculator
 from backend.log_parser import LogParser
 from backend.services import TradingService
+from backend.paths import find_project_file
 
-env_path = Path.home() / "Trade-Bot" / ".env"
+env_path = find_project_file(".env")
 if env_path.exists():
     with open(env_path) as f:
         for line in f:
@@ -201,6 +202,7 @@ def get_price_data():
             d = r.json()
             
             last_price = (
+                sf(d.get("last_price")) or
                 sf(d.get("lastPrice")) or 
                 sf(d.get("last")) or 
                 sf(d.get("price")) or 
@@ -229,8 +231,10 @@ def get_price_data():
             
             volume = (
                 sf(d.get("usd_volume_est")) or
-                sf(d.get("base_volume")) or
+                sf(d.get("usdVolumeEst")) or
                 sf(d.get("target_volume")) or
+                sf(d.get("quote_volume")) or
+                sf(d.get("base_volume")) or
                 sf(d.get("baseVolume")) or
                 sf(d.get("quoteVolume")) or
                 0
@@ -383,7 +387,7 @@ async def api_win_rate():
 def parse_fills_from_logs() -> list:
     """Parse filled trades from bot logs."""
     import re
-    log_path = Path.home() / "Trade-Bot" / "logs" / "market_maker.log"
+    log_path = find_project_file("logs", "market_maker.log")
     if not log_path.exists():
         return []
     
@@ -518,6 +522,9 @@ async def api_order_preflight(payload: dict):
 
 @app.post("/api/orders/manual")
 async def api_manual_order(payload: dict):
+    if not api_client.api_key or not api_client.api_secret:
+        return {"ok": False, "error": "Missing NONKYC_API_KEY/NONKYC_API_SECRET in .env"}
+
     pre = manual_order_preflight(payload)
     if not pre.get("ok"):
         return {"ok": False, "error": "; ".join(pre.get("errors") or ["Invalid order parameters"]), "preflight": pre}
@@ -549,6 +556,9 @@ async def api_manual_order(payload: dict):
 
 @app.post("/api/orders/cancel-all")
 async def api_cancel_all_orders():
+    if not api_client.api_key or not api_client.api_secret:
+        return {"ok": False, "error": "Missing NONKYC_API_KEY/NONKYC_API_SECRET in .env"}
+
     result = api_client.cancel_all_orders("MEWC_USDT")
     return {"ok": "error" not in result, "result": result}
 
@@ -613,7 +623,7 @@ async def api_backtest_replay_summary():
 
 @app.get("/api/strategy-journal")
 async def api_strategy_journal(limit: int = 30):
-    log_path = Path.home() / "Trade-Bot" / "logs" / "market_maker.log"
+    log_path = find_project_file("logs", "market_maker.log")
     if not log_path.exists():
         return []
 

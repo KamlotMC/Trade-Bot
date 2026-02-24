@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from dashboard.web.app import app, build_confirm_token, manual_order_preflight
+from dashboard.backend.services import TradingService
 
 client = TestClient(app)
 
@@ -104,3 +105,41 @@ if __name__ == "__main__":
     test_manual_order_invalid_payload_returns_error_message()
     test_builder_and_preflight_endpoints_payloads()
     print("Dashboard global tests passed")
+
+
+def test_open_orders_filter_excludes_closed_items():
+    class StubApi:
+        def get_open_orders(self, symbol):
+            return {
+                "orders": [
+                    {"id": "1", "side": "BUY", "price": "0.1", "quantity": "10", "status": "FILLED", "executedQty": "10"},
+                    {"id": "2", "side": "SELL", "price": "0.2", "quantity": "5", "status": "OPEN", "remaining": "5"},
+                    {"id": "3", "side": "BUY", "price": "0.3", "quantity": "4", "status": "CANCELED", "remaining": "0"},
+                ]
+            }
+
+    service = TradingService(api_client=StubApi(), data_store=None)
+    rows = service.get_open_orders("MEWC_USDT")
+    assert [r["id"] for r in rows] == ["2"]
+
+
+def test_price_endpoint_parses_snake_case_payload(monkeypatch):
+    from dashboard.web import app as app_mod
+
+    class Resp:
+        ok = True
+
+        def json(self):
+            return {
+                "last_price": "0.123",
+                "bid": "0.12",
+                "ask": "0.13",
+                "change_percent": "+1.5",
+                "usd_volume_est": "99.5",
+            }
+
+    monkeypatch.setattr(app_mod.requests, "get", lambda *args, **kwargs: Resp())
+    data = app_mod.get_price_data()
+
+    assert data["last_price"] == 0.123
+    assert data["volume"] == 99.5

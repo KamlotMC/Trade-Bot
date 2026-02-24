@@ -5,6 +5,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
+from .paths import find_project_file
+
 class NonKYCClient:
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None):
         self.base_url = "https://api.nonkyc.io/api/v2"
@@ -13,7 +15,7 @@ class NonKYCClient:
             self.api_key = api_key
             self.api_secret = api_secret
         else:
-            load_dotenv(Path.home() / "Trade-Bot" / ".env")
+            load_dotenv(find_project_file(".env"))
             self.api_key = os.getenv("NONKYC_API_KEY", "")
             self.api_secret = os.getenv("NONKYC_API_SECRET", "")
         
@@ -27,27 +29,34 @@ class NonKYCClient:
         sig = hmac.new(self.api_secret.encode(), data.encode(), hashlib.sha256).hexdigest()
         return {"X-API-KEY": self.api_key, "X-API-NONCE": nonce, "X-API-SIGN": sig}
     
-    def _request(self, method: str, endpoint: str, params: dict = None, signed: bool = False) -> Dict:
-        """Make API request with proper error handling"""
+    def _request(self, method: str, endpoint: str, params: dict = None, signed: bool = False, as_json: bool = False) -> Dict:
+        """Make API request with proper error handling."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        
+
         query_params = params or {}
-        query_string = "&".join(f"{k}={v}" for k, v in sorted(query_params.items()))
-        full_url = f"{url}?{query_string}" if query_string else url
-        
-        headers = {"Accept": "application/json"}
+        body = ""
+        request_kwargs = {"headers": {"Accept": "application/json"}, "timeout": 10}
+
+        if as_json and method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            body = json.dumps(query_params, separators=(",", ":"), sort_keys=True)
+            request_kwargs["json"] = query_params
+            full_url = url
+        else:
+            query_string = "&".join(f"{k}={v}" for k, v in sorted(query_params.items()))
+            full_url = f"{url}?{query_string}" if query_string else url
+            request_kwargs["params"] = query_params
+
         if signed:
-            headers.update(self._sign(full_url))
-        
+            request_kwargs["headers"].update(self._sign(full_url, body=body))
+
         try:
-            print(f"🔍 API Request: {method} {url} params={query_params}")
-            r = self.session.request(method, url, params=query_params, headers=headers, timeout=10)
+            print(f"🔍 API Request: {method} {url} params={query_params} as_json={as_json}")
+            r = self.session.request(method, url, **request_kwargs)
             print(f"📊 API Response: {r.status_code} - {r.text[:200]}")
-            
+
             if r.status_code == 200:
                 return r.json()
-            else:
-                return {"error": f"{r.status_code}: {r.text[:200]}"}
+            return {"error": f"{r.status_code}: {r.text[:200]}"}
         except Exception as e:
             print(f"❌ API Exception: {e}")
             return {"error": str(e)}
@@ -112,7 +121,7 @@ class NonKYCClient:
             ("DELETE", f"account/orders/{order_id}", None),
         ]
         for method, endpoint, params in endpoints_to_try:
-            result = self._request(method, endpoint, params=params, signed=True)
+            result = self._request(method, endpoint, params=params, signed=True, as_json=(method != "GET"))
             if "error" not in result:
                 return result
         return {"error": f"Failed to cancel order {order_id}"}
@@ -126,7 +135,7 @@ class NonKYCClient:
             {"symbol": symbol, "side": normalized_side, "type": "market", "quantity": quantity},
         ]
         for payload in payloads:
-            result = self._request("POST", "createorder", params=payload, signed=True)
+            result = self._request("POST", "createorder", params=payload, signed=True, as_json=True)
             if "error" not in result:
                 return result
         return {"error": "Failed to create market order"}
@@ -141,7 +150,7 @@ class NonKYCClient:
             {"symbol": symbol, "side": normalized_side, "type": "limit", "quantity": quantity, "price": price},
         ]
         for payload in payloads:
-            result = self._request("POST", "createorder", params=payload, signed=True)
+            result = self._request("POST", "createorder", params=payload, signed=True, as_json=True)
             if "error" not in result:
                 return result
         return {"error": "Failed to create limit order"}
@@ -149,7 +158,7 @@ class NonKYCClient:
     def cancel_all_orders(self, symbol: str = "MEWC_USDT") -> Dict:
         symbol_no_underscore = symbol.replace("_", "")
         for payload in ({"symbol": symbol_no_underscore}, {"symbol": symbol}):
-            result = self._request("POST", "cancelallorders", params=payload, signed=True)
+            result = self._request("POST", "cancelallorders", params=payload, signed=True, as_json=True)
             if "error" not in result:
                 return result
         return {"error": "Failed to cancel all orders"}

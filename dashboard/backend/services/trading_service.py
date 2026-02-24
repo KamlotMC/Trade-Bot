@@ -28,12 +28,25 @@ class TradingService:
             return []
 
         normalized = []
+        closed_statuses = {"FILLED", "CANCELED", "CANCELLED", "REJECTED", "EXPIRED", "CLOSED"}
+        open_statuses = {"OPEN", "NEW", "PARTIALLY_FILLED", "PARTIAL", "ACTIVE"}
+
         for order in rows:
             side = str(order.get("side") or order.get("type") or "").upper()
             price_val = self._sf(order.get("price") or order.get("rate") or order.get("limitPrice"))
             qty_val = self._sf(order.get("quantity") or order.get("origQty") or order.get("qty") or order.get("amount"))
-            remaining = self._sf(order.get("remaining") or order.get("leavesQty") or order.get("openQty") or qty_val)
-            status = str(order.get("status") or "OPEN").upper()
+            status = str(order.get("status") or order.get("state") or "OPEN").upper()
+            filled = self._sf(order.get("filled") or order.get("executedQty") or order.get("cumQty"))
+
+            remaining_raw = order.get("remaining")
+            if remaining_raw is None:
+                remaining_raw = order.get("leavesQty")
+            if remaining_raw is None:
+                remaining_raw = order.get("openQty")
+            remaining = self._sf(remaining_raw, max(qty_val - filled, 0.0))
+            if remaining <= 0 and qty_val > filled:
+                remaining = max(qty_val - filled, 0.0)
+
             oid = str(order.get("id") or order.get("orderId") or order.get("clientOrderId") or "")
             normalized.append(
                 {
@@ -48,7 +61,12 @@ class TradingService:
                 }
             )
 
-        return [o for o in normalized if o["status"] in {"OPEN", "NEW", "PARTIALLY_FILLED"} or o["remaining"] > 0]
+        return [
+            o
+            for o in normalized
+            if (o["status"] in open_statuses)
+            or (o["status"] not in closed_statuses and o["remaining"] > 0)
+        ]
 
     def cancel_open_order(self, order_id: str) -> Dict[str, Any]:
         result = self.api_client.cancel_order(order_id)

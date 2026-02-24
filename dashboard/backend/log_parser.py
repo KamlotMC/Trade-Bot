@@ -3,10 +3,12 @@ import re
 from typing import List, Dict, Optional
 from pathlib import Path
 
+from .paths import find_project_file
+
 class LogParser:
     def __init__(self, log_path: Optional[str] = None):
         if log_path is None:
-            self.log_path = Path.home() / "Trade-Bot" / "logs" / "market_maker.log"
+            self.log_path = find_project_file("logs", "market_maker.log")
         else:
             self.log_path = Path(log_path)
     

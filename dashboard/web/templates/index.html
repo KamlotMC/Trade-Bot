@@ -525,6 +525,9 @@
     function upsertLineChart(chartRef, canvasId, labels, data, borderColor, fillColor){
       const canvas = document.getElementById(canvasId);
       if(!canvas) return chartRef;
+      if(typeof window.Chart === 'undefined'){
+        return chartRef;
+      }
       if(!chartRef){
         return new Chart(canvas, {
           type:'line',

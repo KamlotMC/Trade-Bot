@@ -5,10 +5,13 @@ import logging
 import os
 import sys
 
+import asyncio
 import requests
 from datetime import datetime, timedelta
 import math
 import hashlib
+
+from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from backend.api_client import NonKYCClient
@@ -53,6 +56,36 @@ STRATEGY_CONFIGS = {
     "A": {"spread_pct": 0.02, "levels": 3, "qty_mult": 1.4},
     "B": {"spread_pct": 0.028, "levels": 4, "qty_mult": 1.2},
 }
+
+
+class ManualOrderPayload(BaseModel):
+    side: str = "BUY"
+    type: str = "MARKET"
+    quantity: float = Field(default=0.0, ge=0.0)
+    price: float | None = None
+    reduce_only: bool = False
+    confirm_token: str | None = None
+
+
+class RuleBuilderCondition(BaseModel):
+    type: str
+    operator: str
+    value: float
+
+
+class RuleBuilderAction(BaseModel):
+    action: str
+
+
+class RuleBuilderPayload(BaseModel):
+    name: str
+    if_: RuleBuilderCondition = Field(alias="if")
+    then: RuleBuilderAction
+    time_window: str = "always"
+
+
+async def run_blocking(func, *args, **kwargs):
+    return await asyncio.to_thread(func, *args, **kwargs)
 
 
 def percentile(vals, p):
@@ -276,7 +309,7 @@ async def index():
 
 @app.get("/api/price")
 async def api_price():
-    data = get_price_data()
+    data = await run_blocking(get_price_data)
     if data is None:
         data = {
             "last_price": 0.00003750,
@@ -296,7 +329,7 @@ async def api_price():
 
 @app.get("/api/portfolio")
 async def api_portfolio():
-    balances_result = api_client.get_balances()
+    balances_result = await run_blocking(api_client.get_balances)
 
     data_source = "exchange"
     data_warning = None
@@ -314,16 +347,16 @@ async def api_portfolio():
         data_source = "history_fallback"
         data_warning = f"Balances unavailable: {err}"
 
-        hist = data_store.get_portfolio_history(7)
+        hist = await run_blocking(data_store.get_portfolio_history, 7)
         last_total = hist[-1]["total_value_usdt"] if hist else 0.0
         mewc, usdt = 0.0, float(last_total)
 
-    price_data = get_price_data()
+    price_data = await run_blocking(get_price_data)
     price = price_data["last_price"] if price_data and price_data["last_price"] > 0 else 0.00003750
     mewc_val = mewc * price
     total = mewc_val + usdt
 
-    data_store.add_snapshot(total)
+    await run_blocking(data_store.add_snapshot, total)
 
     mewc_r = round(mewc, 2)
     usdt_r = round(usdt, 2)
@@ -366,13 +399,13 @@ async def api_pnl_saldo():
         pct = ((curr - start) / start * 100) if start > 0 else 0
         return {"pnl": round(curr - start, 2), "start_value": round(start, 2), "current_value": round(curr, 2), "change_pct": round(pct, 2)}
     except Exception as e:
-        print(f"PnL saldo error: {e}")
+        logger.warning("PnL saldo error: %s", e)
         return {"pnl": 0, "start_value": 0, "current_value": 0, "change_pct": 0}
 
 @app.get("/api/win-rate")
 async def api_win_rate():
-    trades = data_store.get_trades(1000, 30)
-    print(f"📊 Win rate: {len(trades)} trades in DB")
+    trades = await run_blocking(data_store.get_trades, 1000, 30)
+    logger.info("Win rate computed from %s trades in DB", len(trades))
 
     enriched = enrich_trades_with_realized_pnl(trades)
     realized = [t.get("calculated_pnl") for t in enriched if t.get("calculated_pnl") is not None]
@@ -386,7 +419,7 @@ async def api_win_rate():
         "losing": losses,
         "total": total
     }
-    print(f"✅ Win rate result: {result}")
+    logger.info("Win rate result=%s", result)
     return result
 
 
@@ -457,40 +490,37 @@ def parse_fills_from_logs() -> list:
 @app.get("/api/fills")
 async def api_fills():
     """Get trades with calculated P&L - fallback to log parsing"""
-    trades = data_store.get_trades(50, 30)
+    trades = await run_blocking(data_store.get_trades, 50, 30)
     
     if not trades:
-        print("📊 No trades in DB, trying log parsing...")
+        logger.info("No trades in DB, trying log parsing")
         log_trades = parse_fills_from_logs()
         if log_trades:
-            print(f"✅ Parsed {len(log_trades)} trades from logs")
+            logger.info("Parsed %s trades from logs", len(log_trades))
             for t in log_trades:
-                data_store.add_trade(t["side"], t["quantity"], t["price"], t["fee"], t["order_id"])
-            trades = data_store.get_trades(50, 30)
-    print(f"📊 Fills: {len(trades)} trades from DB")
+                await run_blocking(data_store.add_trade, t["side"], t["quantity"], t["price"], t["fee"], t["order_id"], None, t.get("timestamp"))
+            trades = await run_blocking(data_store.get_trades, 50, 30)
+    logger.info("Fills loaded from DB count=%s", len(trades))
     
     final_result = enrich_trades_with_realized_pnl(trades)
-    print(f"✅ Returning {len(final_result)} trades")
+    logger.info("Returning fills count=%s", len(final_result))
     return final_result
 
 @app.post("/api/trades/sync-from-exchange")
 async def sync_trades():
-    print("🔄 Syncing trades from exchange...")
-    result = api_client.get_my_trades("MEWC_USDT", 200)
+    logger.info("Syncing trades from exchange")
+    result = await run_blocking(api_client.get_my_trades, "MEWC_USDT", 200)
     
     if "error" in result:
-        print(f"❌ Sync error: {result['error']}")
+        logger.error("Sync error: %s", result["error"])
         return {"status": "error", "message": result["error"]}
     
     fills = result.get("trades", result) if isinstance(result, dict) else result
-    print(f"📊 Got {len(fills)} trades from API")
+    logger.info("Got %s trades from API", len(fills))
     
     added = 0
-    existing = data_store.get_trades(10000, 365)
-    existing_keys = {
-        (str(t.get("order_id") or ""), str(t.get("side") or ""), float(sf(t.get("quantity"))), float(sf(t.get("price"))), str(t.get("timestamp") or ""))
-        for t in existing
-    }
+    existing = await run_blocking(data_store.get_trades, 10000, 365)
+    existing_keys = {str(t.get("dedupe_key") or "") for t in existing}
 
     for f in fills:
         oid = str(f.get('orderId') or '')
@@ -498,23 +528,33 @@ async def sync_trades():
         dedup_id = tid or oid
         if not dedup_id:
             continue
-        
+
         side = f.get('side', 'BUY').upper()
         qty = sf(f.get('qty') or f.get('quantity'))
         prc = sf(f.get('price'))
         fee = sf(f.get('commission') or f.get('fee'))
         ts = str(f.get('timestamp') or f.get('time') or f.get('createdAt') or "")
+        dedupe_key = DataStore.build_trade_key(side=side, quantity=qty, price=prc, order_id=oid or dedup_id, source_trade_id=tid or None, timestamp=ts)
 
-        key = (dedup_id, side, float(qty), float(prc), ts)
-        if key in existing_keys:
+        if dedupe_key in existing_keys:
             continue
-        
-        data_store.add_trade(side=side, quantity=qty, price=prc, fee=fee, order_id=dedup_id)
-        existing_keys.add(key)
-        print(f"  + Added: {side} {qty} @ {prc}")
-        added += 1
-    
-    print(f"✅ Synced {added} new trades")
+
+        inserted = await run_blocking(
+            data_store.add_trade,
+            side,
+            qty,
+            prc,
+            fee,
+            oid or dedup_id,
+            tid or None,
+            ts or None,
+        )
+        if inserted:
+            existing_keys.add(dedupe_key)
+            logger.info("Added trade %s %s @ %s", side, qty, prc)
+            added += 1
+
+    logger.info("Synced %s new trades", added)
     return {"status": "success", "added": added, "total": len(fills)}
 
 
@@ -522,26 +562,27 @@ async def sync_trades():
 
 
 @app.post("/api/orders/preflight")
-async def api_order_preflight(payload: dict):
-    return manual_order_preflight(payload)
+async def api_order_preflight(payload: ManualOrderPayload):
+    return manual_order_preflight(payload.model_dump(by_alias=True))
 
 
 @app.post("/api/orders/manual")
-async def api_manual_order(payload: dict):
+async def api_manual_order(payload: ManualOrderPayload):
     if not api_client.api_key or not api_client.api_secret:
         return {"ok": False, "error": "Missing NONKYC_API_KEY/NONKYC_API_SECRET in .env"}
 
-    pre = manual_order_preflight(payload)
+    payload_data = payload.model_dump(by_alias=True)
+    pre = manual_order_preflight(payload_data)
     if not pre.get("ok"):
         return {"ok": False, "error": "; ".join(pre.get("errors") or ["Invalid order parameters"]), "preflight": pre}
 
     side = pre["side"]
     order_type = pre["type"]
     quantity = pre["quantity"]
-    price = sf(payload.get("price"))
+    price = sf(payload_data.get("price"))
 
     if pre.get("confirm_required"):
-        provided = str(payload.get("confirm_token") or "")
+        provided = str(payload_data.get("confirm_token") or "")
         expected = str(pre.get("confirm_token") or "")
         if not provided or (expected and provided != expected):
             return {"ok": False, "error": "Confirmation required for large order", "preflight": pre}
@@ -714,7 +755,7 @@ async def api_errors():
 @app.get("/api/profitability")
 async def get_profitability_stats():
     """Get detailed profitability statistics."""
-    trades = data_store.get_trades(1000, 30)
+    trades = await run_blocking(data_store.get_trades, 1000, 30)
     
     if not trades:
         return {
@@ -772,7 +813,7 @@ async def get_profitability_stats():
 @app.get("/api/execution-quality")
 async def api_execution_quality():
     """Execution quality stats from realized FIFO PnL stream."""
-    trades = data_store.get_trades(1000, 30)
+    trades = await run_blocking(data_store.get_trades, 1000, 30)
     enriched = enrich_trades_with_realized_pnl(trades)
     realized = [sf(t.get("calculated_pnl")) for t in enriched if t.get("calculated_pnl") is not None]
 
@@ -808,7 +849,7 @@ async def api_execution_quality():
 @app.get("/api/live-risk")
 async def api_live_risk():
     """Live risk widget payload from latest balances + config bands."""
-    balances_result = api_client.get_balances()
+    balances_result = await run_blocking(api_client.get_balances)
     if "error" in balances_result:
         return {
             "inventory_ratio": 0,
@@ -859,19 +900,19 @@ async def api_live_pnl(window: str = "today", symbol: str = "MEWC_USDT", strateg
     realized = sum(sf(t.get("calculated_pnl")) for t in enriched if t.get("calculated_pnl") is not None)
     fees = sum(sf(t.get("fee")) for t in trades)
 
-    balances = api_client.get_balances()
+    balances = await run_blocking(api_client.get_balances)
     unrealized = 0.0
     if isinstance(balances, dict) and "error" not in balances:
         bl = balances.get("balances", balances) if isinstance(balances, dict) else balances
         mewc = get_asset_totals(bl, "MEWC")
-        pd = get_price_data() or {}
+        pd = (await run_blocking(get_price_data)) or {}
         px = sf(pd.get("last_price"), 0.0000375)
         # synthetic inventory cost baseline for quick unrealized estimate
         unrealized = mewc * px * 0.002
 
     net = realized + unrealized - fees
 
-    hist = data_store.get_portfolio_history(days)
+    hist = await run_blocking(data_store.get_portfolio_history, days)
     curve = [{"timestamp": h.get("timestamp"), "equity": round(sf(h.get("total_value_usdt")), 4)} for h in hist]
 
     return {
@@ -887,9 +928,10 @@ async def api_live_pnl(window: str = "today", symbol: str = "MEWC_USDT", strateg
 
 
 @app.post("/api/automation-rules/builder")
-async def api_add_automation_rule_builder(payload: dict):
-    if_clause = payload.get("if", {}) or {}
-    then_clause = payload.get("then", {}) or {}
+async def api_add_automation_rule_builder(payload: RuleBuilderPayload):
+    payload_data = payload.model_dump(by_alias=True)
+    if_clause = payload_data.get("if", {}) or {}
+    then_clause = payload_data.get("then", {}) or {}
     condition_type = str(if_clause.get("type", "")).strip()
     operator = str(if_clause.get("operator", "")).strip()
     value = if_clause.get("value")
@@ -901,13 +943,13 @@ async def api_add_automation_rule_builder(payload: dict):
     rid = max([r["id"] for r in AUTOMATION_RULES], default=0) + 1
     row = {
         "id": rid,
-        "name": payload.get("name", f"Rule {rid}"),
+        "name": payload_data.get("name", f"Rule {rid}"),
         "condition": f"{condition_type} {operator} {value}",
         "action": action,
         "enabled": True,
         "if": if_clause,
         "then": then_clause,
-        "time_window": payload.get("time_window", "always"),
+        "time_window": payload_data.get("time_window", "always"),
     }
     AUTOMATION_RULES.append(row)
     return {"ok": True, "rule": row}

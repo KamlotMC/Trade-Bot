@@ -43,17 +43,29 @@ def get_bundle_dir() -> Path:
 def _ensure_user_file(filename: str, force: bool = False) -> Path:
     """Ensure a user-editable copy of *filename* exists next to the exe.
 
-    If the file doesn't exist in the app dir yet (or *force* is True),
-    copy the bundled default from the _MEIPASS temp dir (or cwd for
-    dev mode).  Returns the path to the user-editable file.
+    Migration behavior for previous force-overwrite releases:
+      - keep the user file untouched by default,
+      - if bundled defaults changed, save a side-by-side `*.bundled-new`
+        file once so users can merge new options safely.
     """
     app_dir = get_app_dir()
     user_file = app_dir / filename
-    if force or not user_file.exists():
-        bundled = get_bundle_dir() / filename
-        if bundled.exists():
-            if bundled.resolve() != user_file.resolve():
-                shutil.copy2(bundled, user_file)
+    bundled = get_bundle_dir() / filename
+
+    if (force or not user_file.exists()) and bundled.exists():
+        if bundled.resolve() != user_file.resolve():
+            shutil.copy2(bundled, user_file)
+        return user_file
+
+    if user_file.exists() and bundled.exists() and bundled.resolve() != user_file.resolve():
+        try:
+            if bundled.read_bytes() != user_file.read_bytes():
+                migrated_copy = user_file.with_name(f"{user_file.name}.bundled-new")
+                if not migrated_copy.exists():
+                    shutil.copy2(bundled, migrated_copy)
+        except OSError:
+            pass
+
     return user_file
 
 
@@ -147,7 +159,7 @@ def load_config(config_path: str = "config.yaml") -> BotConfig:
 
     # Resolve config path — if the caller passed the default, look next to exe
     if config_path == "config.yaml":
-        user_config = _ensure_user_file("config.yaml", force=True)
+        user_config = _ensure_user_file("config.yaml", force=False)
     else:
         user_config = Path(config_path)
 

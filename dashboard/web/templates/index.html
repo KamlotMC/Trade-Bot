@@ -41,8 +41,11 @@
     }
     .header { text-align:center; margin-bottom:18px; }
     .header h1 { color:#ff9500; font-weight:300; letter-spacing:2px; text-transform:uppercase; }
-    .status-bar { display:inline-flex; gap:30px; margin:10px 0 14px; padding:10px 20px; background:rgba(255,149,0,0.05); border:1px solid rgba(255,149,0,.2); border-radius:6px; }
+    .status-bar { display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:16px; margin:10px auto 14px; padding:10px 16px; background:rgba(255,149,0,0.05); border:1px solid rgba(255,149,0,.2); border-radius:10px; position:sticky; top:8px; z-index:10; backdrop-filter: blur(6px); }
     .status-item { display:flex; gap:8px; align-items:center; color:#888; font-size:.9em; }
+    .status-controls { display:flex; align-items:center; gap:8px; }
+    .status-select { padding:5px 8px; border-radius:6px; border:1px solid rgba(255,149,0,.35); background:#0f0f0f; color:#ff9500; }
+    .mini-btn { border:1px solid rgba(255,149,0,.45); background:rgba(255,149,0,.12); color:#ffb24a; border-radius:6px; padding:5px 9px; cursor:pointer; }
     .status-indicator { width:8px; height:8px; border-radius:50%; background:#ff3b30; }
     .status-indicator.live { background:#34c759; }
 
@@ -132,6 +135,7 @@
     @media (max-width: 980px){
       .row-1,.row-2,.row-3,.row-4,.row-2-even { grid-template-columns:1fr; }
       body { padding:14px; }
+      .status-bar { justify-content:flex-start; }
     }
   </style>
 </head>
@@ -142,6 +146,15 @@
       <div class="status-item"><span>Refresh:</span><span id="countdown" style="color:#ff9500;font-weight:600;">5s</span></div>
       <div class="status-item"><span>Cycle:</span><span id="botCycle" style="color:#ff9500;font-weight:600;">-</span></div>
       <div class="status-item"><span>Bot:</span><span id="botSummary" style="color:#99a0bf;">No data</span></div>
+      <div class="status-controls">
+        <button class="mini-btn" onclick="update(true)"><i class="fas fa-rotate"></i> Refresh now</button>
+        <select id="refreshSelect" class="status-select">
+          <option value="5000">5s</option>
+          <option value="10000">10s</option>
+          <option value="15000">15s</option>
+        </select>
+      </div>
+      <div class="status-item"><span>Last update:</span><span id="lastUpdate" style="color:#99a0bf;">-</span></div>
     </div>
     <h1>MEWC Trading Center</h1>
   </div>
@@ -349,6 +362,8 @@
 
   <script>
     let chart = null, intradayChart = null, countdown = 5, lastConn = false;
+    let refreshIntervalMs = 5000, refreshTimer = null;
+    let lastUpdateIssues = 0;
     let isUpdating = false, pendingUpdate = false;
     let portfolioHistHash = null, intradayHash = null;
     let pnlFilter = "today";
@@ -364,15 +379,39 @@
       document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id===`tab-${name}`));
     }
 
-    function updateCountdown(){ countdown = (countdown - 1 + 6) % 6; document.getElementById('countdown').textContent = countdown + 's'; }
+    function updateCountdown(){ const step = Math.max(1, Math.floor(refreshIntervalMs / 1000)); countdown = (countdown - 1 + step + 1) % (step + 1); document.getElementById('countdown').textContent = countdown + 's'; }
     function updateStatus(on){
       const i=document.getElementById('statusIndicator'), t=document.getElementById('statusText');
-      if(on!==lastConn){ lastConn=on; i.className='status-indicator'+(on?' live':''); t.textContent=on?'LIVE':'OFFLINE'; }
+      if(on!==lastConn){ lastConn=on; i.className='status-indicator'+(on?' live':''); }
+      t.textContent = on ? (lastUpdateIssues ? `LIVE (${lastUpdateIssues} warning)` : 'LIVE') : 'OFFLINE';
     }
 
     async function api(url, options={}){
-      try { const r = await fetch(url, options); if(!r.ok) throw new Error(r.status); return await r.json(); }
-      catch(e){ console.error(`API error ${url}:`, e); return null; }
+      try {
+        const r = await fetch(url, options);
+        if(!r.ok) throw new Error(r.status);
+        return await r.json();
+      } catch(e){
+        console.error(`API error ${url}:`, e);
+        return null;
+      }
+    }
+
+    async function safeApi(url, options={}){
+      const data = await api(url, options);
+      return { ok: data !== null, data };
+    }
+
+    function resetRefreshTimer(){
+      if(refreshTimer) clearInterval(refreshTimer);
+      refreshTimer = setInterval(() => { if (!document.hidden) update(); }, refreshIntervalMs);
+    }
+
+    function setRefreshInterval(ms){
+      refreshIntervalMs = Number(ms) || 5000;
+      countdown = Math.max(1, Math.floor(refreshIntervalMs / 1000));
+      document.getElementById('countdown').textContent = countdown + 's';
+      resetRefreshTimer();
     }
 
     function toast(message){
@@ -563,11 +602,16 @@
       if (isUpdating){ pendingUpdate = true; return; }
       isUpdating = true;
       try {
-        const [p, pf, pnl, pnlSaldo, wr, fills, hist, orders, errors, bot, profitability, execq, orderbook, risk, lifecycle, rules, backtest, journal, livePnl, lifeMetrics, reasonTrace] = await Promise.all([
-          api('/api/price'), api('/api/portfolio'), api('/api/pnl'), api('/api/pnl-saldo'), api('/api/win-rate'), api('/api/fills'),
-          api('/api/history'), api('/api/open-orders'), api('/api/errors'), api('/api/bot-status'), api('/api/profitability'), api('/api/execution-quality'),
-          api('/api/orderbook'), api('/api/risk-cockpit'), api('/api/order-lifecycle'), api('/api/automation-rules'), api('/api/backtest-replay-summary'), api('/api/strategy-journal'), api(`/api/live-pnl?window=${encodeURIComponent(pnlFilter)}&symbol=${encodeURIComponent(document.getElementById('pnlSymbol')?.value||'MEWC_USDT')}&strategy=${encodeURIComponent(document.getElementById('pnlStrategy')?.value||'default')}`), api('/api/order-lifecycle-metrics'), api('/api/strategy-reason-trace?limit=30')
+        const [pR, pfR, pnlR, pnlSaldoR, wrR, fillsR, histR, ordersR, errorsR, botR, profitabilityR, execqR, orderbookR, riskR, lifecycleR, rulesR, backtestR, journalR, livePnlR, lifeMetricsR, reasonTraceR] = await Promise.all([
+          safeApi('/api/price'), safeApi('/api/portfolio'), safeApi('/api/pnl'), safeApi('/api/pnl-saldo'), safeApi('/api/win-rate'), safeApi('/api/fills'),
+          safeApi('/api/history'), safeApi('/api/open-orders'), safeApi('/api/errors'), safeApi('/api/bot-status'), safeApi('/api/profitability'), safeApi('/api/execution-quality'),
+          safeApi('/api/orderbook'), safeApi('/api/risk-cockpit'), safeApi('/api/order-lifecycle'), safeApi('/api/automation-rules'), safeApi('/api/backtest-replay-summary'), safeApi('/api/strategy-journal'), safeApi(`/api/live-pnl?window=${encodeURIComponent(pnlFilter)}&symbol=${encodeURIComponent(document.getElementById('pnlSymbol')?.value||'MEWC_USDT')}&strategy=${encodeURIComponent(document.getElementById('pnlStrategy')?.value||'default')}`), safeApi('/api/order-lifecycle-metrics'), safeApi('/api/strategy-reason-trace?limit=30')
         ]);
+        const p = pR.data, pf = pfR.data, pnl = pnlR.data, pnlSaldo = pnlSaldoR.data, wr = wrR.data, fills = fillsR.data, hist = histR.data,
+          orders = ordersR.data, errors = errorsR.data, bot = botR.data, profitability = profitabilityR.data, execq = execqR.data,
+          orderbook = orderbookR.data, risk = riskR.data, lifecycle = lifecycleR.data, rules = rulesR.data, backtest = backtestR.data,
+          journal = journalR.data, livePnl = livePnlR.data, lifeMetrics = lifeMetricsR.data, reasonTrace = reasonTraceR.data;
+        lastUpdateIssues = [pR,pfR,pnlR,pnlSaldoR,wrR,fillsR,histR,ordersR,errorsR,botR,profitabilityR,execqR,orderbookR,riskR,lifecycleR,rulesR,backtestR,journalR,livePnlR,lifeMetricsR,reasonTraceR].filter(x=>!x.ok).length;
 
         if (p){ document.getElementById('price').textContent = price(p.last_price); document.getElementById('bid').textContent=price(p.bid); document.getElementById('ask').textContent=price(p.ask); document.getElementById('volume').textContent=fmt(p.usd_volume_est,0)+' USDT'; const cv=parseFloat(p.change_percent)||0; const ch=document.getElementById('priceChange'); ch.textContent=(cv>=0?'+':'')+p.change_percent+'%'; ch.className=cv>=0?'positive':'negative'; }
         if (pf){ document.getElementById('mewcBalance').textContent=fmtInt(pf.mewc_balance); document.getElementById('mewcValue').textContent=fmt(pf.mewc_value_usdt,2)+' USDT'; document.getElementById('usdtBalance').textContent=fmt(pf.usdt_balance,2); document.getElementById('usdtValue').textContent=fmt(pf.usdt_balance,2)+' USDT'; const total = Number.isFinite(Number(pf.total_value_usdt)) ? pf.total_value_usdt : ((pf.mewc_value_usdt||0)+(pf.usdt_balance||0)); document.getElementById('totalValue').textContent=fmt(total,2)+' USDT'; }
@@ -606,7 +650,8 @@
           const summary = `mid ${price(bot.last_mid_price)} | skew ${fmt(bot.last_skew,4)} | bids ${bot.active_bids||0} / asks ${bot.active_asks||0}`;
           document.getElementById('botSummary').textContent = summary;
         }
-        updateStatus(true); countdown = 5;
+        document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+        updateStatus(true); countdown = Math.max(1, Math.floor(refreshIntervalMs / 1000));
       } catch(e){ console.error('Update error:', e); updateStatus(false); }
       finally {
         isUpdating = false;
@@ -618,7 +663,8 @@
     syncManualOrderType();
     document.getElementById('manualType').addEventListener('change', syncManualOrderType);
     ['manualQty','manualPrice','manualSide','manualType','manualReduceOnly'].forEach(id=>document.getElementById(id).addEventListener('change', preflightManualOrder));
-    setInterval(() => { if (!document.hidden) update(); }, 5000);
+    document.getElementById('refreshSelect').addEventListener('change', (e)=>setRefreshInterval(e.target.value));
+    setRefreshInterval(document.getElementById('refreshSelect').value);
     setInterval(updateCountdown, 1000);
     document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) update(true); });
   </script>

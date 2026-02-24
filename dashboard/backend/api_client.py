@@ -1,11 +1,19 @@
 """NonKYC API Client."""
-import hmac, hashlib, time, requests, json
-from typing import Optional, Dict
-from pathlib import Path
-from dotenv import load_dotenv
+import hashlib
+import hmac
+import json
+import logging
 import os
+import time
+from typing import Any, Dict, Optional
+from urllib.parse import urlencode
+
+import requests
+from dotenv import load_dotenv
 
 from .paths import find_project_file
+
+logger = logging.getLogger(__name__)
 
 class NonKYCClient:
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None):
@@ -22,27 +30,36 @@ class NonKYCClient:
         self.session = requests.Session()
         self.session.headers.update({"Accept": "application/json"})
     
-    def _sign(self, full_url: str, body: str = "") -> Dict:
+    def _sign(self, full_url: str, body: str = "") -> Dict[str, str]:
         """Generate signature: api_key + full_url + body + nonce"""
         nonce = str(int(time.time() * 1000))
         data = f"{self.api_key}{full_url}{body}{nonce}"
         sig = hmac.new(self.api_secret.encode(), data.encode(), hashlib.sha256).hexdigest()
         return {"X-API-KEY": self.api_key, "X-API-NONCE": nonce, "X-API-SIGN": sig}
     
-    def _request(self, method: str, endpoint: str, params: dict = None, signed: bool = False, as_json: bool = False) -> Dict:
+    def _request(
+        self,
+        method: str,
+        endpoint: str,
+        params: Optional[Dict[str, Any]] = None,
+        signed: bool = False,
+        as_json: bool = False,
+    ) -> Dict[str, Any]:
         """Make API request with proper error handling."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
 
         query_params = params or {}
         body = ""
         request_kwargs = {"headers": {"Accept": "application/json"}, "timeout": 10}
+        request_method = method.upper()
 
-        if as_json and method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        if as_json and request_method in {"POST", "PUT", "PATCH", "DELETE"}:
             body = json.dumps(query_params, separators=(",", ":"), sort_keys=True)
-            request_kwargs["json"] = query_params
+            request_kwargs["data"] = body
+            request_kwargs["headers"]["Content-Type"] = "application/json"
             full_url = url
         else:
-            query_string = "&".join(f"{k}={v}" for k, v in sorted(query_params.items()))
+            query_string = urlencode(sorted(query_params.items()))
             full_url = f"{url}?{query_string}" if query_string else url
             request_kwargs["params"] = query_params
 
@@ -50,15 +67,18 @@ class NonKYCClient:
             request_kwargs["headers"].update(self._sign(full_url, body=body))
 
         try:
-            print(f"🔍 API Request: {method} {url} params={query_params} as_json={as_json}")
-            r = self.session.request(method, url, **request_kwargs)
-            print(f"📊 API Response: {r.status_code} - {r.text[:200]}")
+            logger.debug("API request %s %s params=%s as_json=%s", request_method, url, query_params, as_json)
+            r = self.session.request(request_method, url, **request_kwargs)
+            logger.debug("API response %s %s", r.status_code, r.text[:200])
 
-            if r.status_code == 200:
-                return r.json()
+            if 200 <= r.status_code < 300:
+                try:
+                    return r.json()
+                except ValueError:
+                    return {"ok": True, "raw": r.text}
             return {"error": f"{r.status_code}: {r.text[:200]}"}
         except Exception as e:
-            print(f"❌ API Exception: {e}")
+            logger.exception("API request failed")
             return {"error": str(e)}
     
     def get_ticker(self, symbol: str = "MEWC_USDT") -> Dict:

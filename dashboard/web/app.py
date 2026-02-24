@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, FileResponse
 from pathlib import Path
-import sys, os, requests
+import logging
+import os
+import sys
+
+import requests
 from datetime import datetime, timedelta
 import math
 import hashlib
@@ -27,6 +31,8 @@ data_store = DataStore()
 calculator = PnLCalculator(data_store)
 log_parser = LogParser()
 trading_service = TradingService(api_client=api_client, data_store=data_store)
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -240,8 +246,8 @@ def get_price_data():
                 0
             )
             
-            print(f"✅ Price: {last_price}, Bid: {bid}, Ask: {ask}, Change: {change}, Vol: {volume}")
-            
+            logger.debug("Price payload parsed last=%s bid=%s ask=%s change=%s vol=%s", last_price, bid, ask, change, volume)
+
             return {
                 "last_price": last_price,
                 "bid": bid,
@@ -250,10 +256,10 @@ def get_price_data():
                 "volume": volume
             }
         else:
-            print(f"❌ API Error {r.status_code}: {r.text[:200]}")
+            logger.warning("Price API error %s: %s", r.status_code, r.text[:200])
             return None
     except Exception as e:
-        print(f"❌ Price API exception: {e}")
+        logger.warning("Price API exception: %s", e)
         return None
     
     return {
@@ -304,7 +310,7 @@ async def api_portfolio():
             data_warning = "Detected unsupported balance schema; values may be incomplete"
     else:
         err = balances_result.get("error") if isinstance(balances_result, dict) else str(balances_result)
-        print(f"⚠️ Balances API error: {err}")
+        logger.warning("Balances API error: %s", err)
         data_source = "history_fallback"
         data_warning = f"Balances unavailable: {err}"
 

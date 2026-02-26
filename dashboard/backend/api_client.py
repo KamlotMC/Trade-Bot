@@ -95,33 +95,47 @@ class NonKYCClient:
                 return result
         return {"error": "All balance endpoints failed"}
     
-    def get_my_trades(self, symbol: str = "MEWC_USDT", limit: int = 50) -> Dict:
-        """Get my trades."""
-        symbol_no_underscore = symbol.replace("_", "")
+    def get_my_trades(self, symbol: str = "MEWC_USDT", limit: int = 200) -> Dict:
+        """Get trade history via filled/closed orders.
         
-        endpoints_to_try = [
-            ("account/trades", {"symbol": symbol, "limit": limit}),
-            ("account/trades", {"symbol": symbol_no_underscore, "limit": limit}),
-            ("myTrades", {"symbol": symbol, "limit": limit}),
-            ("myTrades", {"symbol": symbol_no_underscore, "limit": limit}),
-            ("user/trades", {"symbol": symbol, "limit": limit}),
-            ("trades/my", {"symbol": symbol, "limit": limit}),
+        NonKYC API v2 nie udostępnia dedykowanego endpointu historii tradów.
+        Historia transakcji to zlecenia ze statusem 'filled' lub 'closed'.
+        """
+        sym_slash = symbol.replace("_", "/")   # MEWC/USDT
+        sym_under = symbol.replace("/", "_")   # MEWC_USDT
+
+        # Próbuj oba formaty symbolu i oba statusy
+        attempts = [
+            ("account/orders", {"symbol": sym_slash, "status": "filled",  "limit": limit}),
+            ("account/orders", {"symbol": sym_under, "status": "filled",  "limit": limit}),
+            ("account/orders", {"symbol": sym_slash, "status": "closed",  "limit": limit}),
+            ("account/orders", {"symbol": sym_under, "status": "closed",  "limit": limit}),
+            # Fallback: wszystkie zlecenia bez filtra statusu
+            ("account/orders", {"symbol": sym_slash, "limit": limit}),
+            ("account/orders", {"symbol": sym_under, "limit": limit}),
         ]
-        
-        for endpoint, params in endpoints_to_try:
+
+        for endpoint, params in attempts:
             result = self._request("GET", endpoint, params=params, signed=True)
-            if "error" not in result:
-                if isinstance(result, list):
-                    return {"trades": result}
-                elif isinstance(result, dict) and "trades" in result:
-                    return result
-                elif isinstance(result, dict) and "data" in result:
-                    if isinstance(result["data"], list):
-                        return {"trades": result["data"]}
-                    return result
-                return {"trades": result}
-        
-        return {"error": "All trade endpoints failed"}
+            if "error" in result:
+                continue
+            orders = result if isinstance(result, list) else result.get("data", result.get("orders", []))
+            if not isinstance(orders, list):
+                continue
+            # Przefiltruj żeby zwrócić tylko faktycznie wypełnione
+            filled = [
+                o for o in orders
+                if str(o.get("status", "")).lower() in ("filled", "closed", "partially_filled")
+                or float(o.get("executedQty", o.get("filled_quantity", o.get("filledQuantity", 0))) or 0) > 0
+            ]
+            if filled or orders:
+                logger.info(
+                    "get_my_trades: endpoint=%s symbol=%s → %d orders (%d filled)",
+                    endpoint, params["symbol"], len(orders), len(filled)
+                )
+                return {"trades": filled or orders}
+
+        return {"error": "All trade endpoints failed — NonKYC API może nie udostępniać historii tradów publicznie"}
     
     def get_open_orders(self, symbol: str = "MEWC_USDT") -> Dict:
         return self._request("GET", "account/orders", params={"symbol": symbol.replace("_", "")}, signed=True)

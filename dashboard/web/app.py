@@ -39,12 +39,6 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-AUTOMATION_RULES = [
-    {"id": 1, "name": "Spread Guard", "condition": "spread_pct > 0.6", "action": "pause_quotes", "enabled": True},
-    {"id": 2, "name": "PnL Protection", "condition": "session_pnl_usdt < -25", "action": "reduce_size_50pct", "enabled": True},
-]
-
-
 HARD_LIMITS = {
     "max_session_drawdown_pct": -4.0,
     "max_day_drawdown_pct": -6.0,
@@ -167,20 +161,39 @@ def sf(val, default=0.0):
 
 
 def extract_balances_payload(payload) -> list:
-    """Normalize known balance response schemas to a flat list."""
+    """Normalize known balance response schemas to a flat list.
+    
+    NonKYC /balances zwraca listę bezpośrednio lub dict z kluczem balances/data.
+    Obsługujemy też format {asset: "MEWC", available: "100", held: "0"}
+    i format {asset: "MEWC", free: "100", locked: "0"}.
+    """
     if isinstance(payload, list):
+        # Sprawdź czy to lista balansów (ma klucz asset) czy coś innego
+        if payload and isinstance(payload[0], dict) and (
+            "asset" in payload[0] or "currency" in payload[0] or "coin" in payload[0]
+        ):
+            # Normalizuj currency/coin -> asset
+            normalized = []
+            for b in payload:
+                entry = dict(b)
+                if "currency" in entry and "asset" not in entry:
+                    entry["asset"] = entry.pop("currency")
+                if "coin" in entry and "asset" not in entry:
+                    entry["asset"] = entry.pop("coin")
+                normalized.append(entry)
+            return normalized
         return payload
     if not isinstance(payload, dict):
         return []
 
-    for key in ("balances", "data", "result", "wallet", "assets"):
+    for key in ("balances", "data", "result", "wallet", "assets", "items"):
         value = payload.get(key)
-        if isinstance(value, list):
-            return value
+        if isinstance(value, list) and value:
+            return extract_balances_payload(value)  # rekurencja obsłuży normalizację
         if isinstance(value, dict):
             nested = value.get("balances")
             if isinstance(nested, list):
-                return nested
+                return extract_balances_payload(nested)
     return []
 
 
@@ -691,7 +704,7 @@ async def api_strategy_journal(limit: int = 30):
 
 @app.get("/api/automation-rules")
 async def api_get_automation_rules():
-    return AUTOMATION_RULES
+    return await run_blocking(data_store.get_automation_rules)
 
 
 @app.post("/api/automation-rules")
@@ -701,11 +714,20 @@ async def api_add_automation_rule(payload: dict):
     action = str(payload.get("action", "")).strip()
     if not name or not condition or not action:
         return {"ok": False, "error": "Missing fields"}
+    rule = await run_blocking(data_store.add_automation_rule, name, condition, action)
+    return {"ok": True, "rule": rule}
 
-    rid = max([r["id"] for r in AUTOMATION_RULES], default=0) + 1
-    row = {"id": rid, "name": name, "condition": condition, "action": action, "enabled": True}
-    AUTOMATION_RULES.append(row)
-    return {"ok": True, "rule": row}
+
+@app.put("/api/automation-rules/{rule_id}")
+async def api_update_automation_rule(rule_id: int, payload: dict):
+    ok = await run_blocking(data_store.update_automation_rule, rule_id, **payload)
+    return {"ok": ok}
+
+
+@app.delete("/api/automation-rules/{rule_id}")
+async def api_delete_automation_rule(rule_id: int):
+    ok = await run_blocking(data_store.delete_automation_rule, rule_id)
+    return {"ok": ok}
 
 
 @app.get("/api/open-orders")
@@ -940,19 +962,15 @@ async def api_add_automation_rule_builder(payload: RuleBuilderPayload):
     if not condition_type or not operator or value is None or not action:
         return {"ok": False, "error": "Missing IF/THEN fields"}
 
-    rid = max([r["id"] for r in AUTOMATION_RULES], default=0) + 1
-    row = {
-        "id": rid,
-        "name": payload_data.get("name", f"Rule {rid}"),
-        "condition": f"{condition_type} {operator} {value}",
-        "action": action,
-        "enabled": True,
+    name = payload_data.get("name") or f"Rule {condition_type}"
+    condition_str = f"{condition_type} {operator} {value}"
+    extra = {
         "if": if_clause,
         "then": then_clause,
         "time_window": payload_data.get("time_window", "always"),
     }
-    AUTOMATION_RULES.append(row)
-    return {"ok": True, "rule": row}
+    rule = await run_blocking(data_store.add_automation_rule, name, condition_str, action, extra)
+    return {"ok": True, "rule": rule}
 
 
 @app.get("/api/order-lifecycle-metrics")

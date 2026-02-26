@@ -19,6 +19,11 @@ class DataStore:
         """Initialize database tables."""
         with self._lock:
             cursor = self.conn.cursor()
+
+            # WAL mode: eliminuje database-is-locked przy jednoczesnym dostępie bot + dashboard
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +54,7 @@ class DataStore:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_order_id ON trades(order_id)")
             cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_dedupe_key ON trades(dedupe_key)")
+
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS portfolio_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,6 +63,29 @@ class DataStore:
             )
         """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON portfolio_snapshots(timestamp)")
+
+            # Tabela automation rules — persystencja między restartami dashboardu
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS automation_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                condition_str TEXT NOT NULL,
+                action TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1,
+                extra_json TEXT DEFAULT '{}'
+            )
+        """)
+            # Wgraj domyślne reguły jeśli tabela jest pusta
+            count = cursor.execute("SELECT COUNT(*) FROM automation_rules").fetchone()[0]
+            if count == 0:
+                defaults = [
+                    ("Spread Guard",   "spread_pct > 0.6",        "pause_quotes",      1),
+                    ("PnL Protection", "session_pnl_usdt < -25",  "reduce_size_50pct", 1),
+                ]
+                cursor.executemany(
+                    "INSERT INTO automation_rules (name, condition_str, action, enabled) VALUES (?,?,?,?)",
+                    defaults,
+                )
             self.conn.commit()
 
     @staticmethod
@@ -151,6 +180,73 @@ class DataStore:
             rows = cursor.fetchall()
 
         return [{"timestamp": row[0], "total_value_usdt": row[1]} for row in rows]
+
+    # ------------------------------------------------------------------
+    # Automation rules — persystencja
+    # ------------------------------------------------------------------
+
+    def get_automation_rules(self) -> List[Dict]:
+        """Zwróć wszystkie automation rules z bazy."""
+        import json
+        with self._lock:
+            cursor = self.conn.cursor()
+            rows = cursor.execute(
+                "SELECT id, name, condition_str, action, enabled, extra_json FROM automation_rules ORDER BY id"
+            ).fetchall()
+        result = []
+        for row in rows:
+            extra = {}
+            try:
+                extra = json.loads(row[5] or "{}")
+            except Exception:
+                pass
+            result.append({
+                "id": row[0], "name": row[1], "condition": row[2],
+                "action": row[3], "enabled": bool(row[4]),
+                **extra,
+            })
+        return result
+
+    def add_automation_rule(self, name: str, condition: str, action: str, extra: dict = None) -> Dict:
+        """Dodaj nową regułę i zwróć ją z nadanym id."""
+        import json
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT INTO automation_rules (name, condition_str, action, enabled, extra_json) VALUES (?,?,?,1,?)",
+                (name, condition, action, json.dumps(extra or {}))
+            )
+            self.conn.commit()
+            rid = cursor.lastrowid
+        return {"id": rid, "name": name, "condition": condition, "action": action, "enabled": True}
+
+    def update_automation_rule(self, rule_id: int, **fields) -> bool:
+        """Zaktualizuj regułę (name, condition, action, enabled)."""
+        import json
+        allowed = {"name", "condition_str", "action", "enabled"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        # condition → condition_str
+        if "condition" in fields and "condition_str" not in updates:
+            updates["condition_str"] = fields["condition"]
+        if not updates:
+            return False
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                f"UPDATE automation_rules SET {set_clause} WHERE id = ?",
+                (*updates.values(), rule_id)
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_automation_rule(self, rule_id: int) -> bool:
+        """Usuń regułę."""
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute("DELETE FROM automation_rules WHERE id = ?", (rule_id,))
+            self.conn.commit()
+            return cursor.rowcount > 0
     
     def get_total_pnl(self, days: int = 1) -> Dict:
         """Calculate total P&L from trades."""

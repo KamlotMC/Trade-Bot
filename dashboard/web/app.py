@@ -164,7 +164,7 @@ def sf(val, default=0.0):
 
 def extract_balances_payload(payload) -> list:
     """Normalize known balance response schemas to a flat list.
-    
+
     NonKYC /balances zwraca listę bezpośrednio lub dict z kluczem balances/data.
     Obsługujemy też format {asset: "MEWC", available: "100", held: "0"}
     i format {asset: "MEWC", free: "100", locked: "0"}.
@@ -254,35 +254,35 @@ def get_price_data():
         r = requests.get("https://api.nonkyc.io/api/v2/ticker/MEWC_USDT", timeout=5)
         if r.ok:
             d = r.json()
-            
+
             last_price = (
                 sf(d.get("last_price")) or
-                sf(d.get("lastPrice")) or 
-                sf(d.get("last")) or 
-                sf(d.get("price")) or 
-                sf(d.get("close")) or 
+                sf(d.get("lastPrice")) or
+                sf(d.get("last")) or
+                sf(d.get("price")) or
+                sf(d.get("close")) or
                 0.00003750
             )
-            
+
             bid = (
-                sf(d.get("bid")) or 
-                sf(d.get("bidPrice")) or 
+                sf(d.get("bid")) or
+                sf(d.get("bidPrice")) or
                 (last_price * 0.995)
             )
-            
+
             ask = (
-                sf(d.get("ask")) or 
-                sf(d.get("askPrice")) or 
+                sf(d.get("ask")) or
+                sf(d.get("askPrice")) or
                 (last_price * 1.005)
             )
-            
+
             change = (
                 d.get("change_percent") or
-                d.get("changePercent") or 
+                d.get("changePercent") or
                 d.get("priceChangePercent") or
                 "0"
             )
-            
+
             volume = (
                 sf(d.get("usd_volume_est")) or
                 sf(d.get("usdVolumeEst")) or
@@ -293,7 +293,7 @@ def get_price_data():
                 sf(d.get("quoteVolume")) or
                 0
             )
-            
+
             logger.debug("Price payload parsed last=%s bid=%s ask=%s change=%s vol=%s", last_price, bid, ask, change, volume)
 
             return {
@@ -309,7 +309,7 @@ def get_price_data():
     except Exception as e:
         logger.warning("Price API exception: %s", e)
         return None
-    
+
     return {
         "last_price": 0.00003750,
         "bid": 0.00003731,
@@ -333,7 +333,7 @@ async def api_price():
             "change_percent": "0",
             "usd_volume_est": 0
         }
-    
+
     return {
         "last_price": data["last_price"],
         "bid": data["bid"],
@@ -439,23 +439,41 @@ async def api_win_rate():
 
 
 def parse_fills_from_logs() -> list:
-    """Parse filled trades from bot logs by detecting balance changes."""
+    """Parse filled trades from bot logs by detecting balance changes.
+    Reads all rotated log files (.log, .log.1, .log.2, .log.3) in chronological order.
+    Uses stable order_id based on timestamp+side+qty for safe deduplication.
+    """
     import re
-    log_path = find_project_file("logs", "market_maker.log")
-    if not log_path.exists():
+    import hashlib
+    log_base = find_project_file("logs", "market_maker.log")
+    if not log_base.exists():
         return []
 
+    # Collect all log files: .log.3 (oldest) → .log.2 → .log.1 → .log (newest)
+    log_files = []
+    for suffix in [".3", ".2", ".1", ""]:
+        p = log_base.parent / (log_base.name + suffix) if suffix else log_base
+        if p.exists():
+            log_files.insert(0 if suffix else len(log_files), p)
+    # Put rotated files first (oldest first), then current log
+    rotated = [log_base.parent / (log_base.name + s) for s in [".3", ".2", ".1"] if (log_base.parent / (log_base.name + s)).exists()]
+    log_files = rotated + [log_base]
+
+    all_lines = []
+    for lf in log_files:
+        try:
+            with open(lf, 'rb') as f:
+                raw = f.read()
+            all_lines.extend(raw.decode('utf-8', errors='replace').splitlines())
+        except Exception as e:
+            logger.warning("Could not read log file %s: %s", lf, e)
+
     trades = []
+    prev_mewc = prev_usdt = None
+    prev_ts = None
+
     try:
-        # Otwórz jako binary i dekoduj linia po linii - log może zawierać bajty binarne
-        with open(log_path, 'rb') as f:
-            raw = f.read()
-        lines = raw.decode('utf-8', errors='replace').splitlines()
-
-        prev_mewc = prev_usdt = None
-        prev_ts = None
-
-        for line in lines:
+        for line in all_lines:
             ts_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|', line)
             line_ts = None
             if ts_match:
@@ -464,20 +482,14 @@ def parse_fills_from_logs() -> list:
                 except ValueError:
                     pass
 
-            m = re.search(
-                r'Balances\s+\xe2\x80\x94|Balances\s+—\s+MEWC:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held\s*\|\s*USDT:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held',
-                line
-            )
-            # Drugi wzorzec bez problemu z encode
             m2 = re.search(
                 r'Balances.*?MEWC:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held.*?USDT:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held',
                 line
             )
-            match = m2 or m
-            if match and match.lastindex >= 4:
+            if m2 and m2.lastindex >= 4:
                 try:
-                    mewc_total = float(match.group(1)) + float(match.group(2))
-                    usdt_total = float(match.group(3)) + float(match.group(4))
+                    mewc_total = float(m2.group(1)) + float(m2.group(2))
+                    usdt_total = float(m2.group(3)) + float(m2.group(4))
                 except (ValueError, IndexError):
                     continue
 
@@ -485,32 +497,43 @@ def parse_fills_from_logs() -> list:
                     mewc_diff = mewc_total - prev_mewc
                     usdt_diff = usdt_total - prev_usdt
 
+                    ts_for_trade = line_ts or prev_ts or datetime.now().isoformat()
+
                     # BUY: dostajemy MEWC, dajemy USDT
                     if mewc_diff > 100 and usdt_diff < -0.001:
                         price = abs(usdt_diff / mewc_diff) if mewc_diff != 0 else 0
                         if price > 0:
+                            qty = round(abs(mewc_diff), 4)
+                            # Stable dedupe key based on content, not index
+                            stable_key = hashlib.sha256(
+                                f"BUY|{ts_for_trade}|{qty}|{price:.10f}".encode()
+                            ).hexdigest()[:16]
                             trades.append({
-                                "timestamp": line_ts or prev_ts or datetime.now().isoformat(),
+                                "timestamp": ts_for_trade,
                                 "side": "BUY",
-                                "quantity": round(abs(mewc_diff), 4),
+                                "quantity": qty,
                                 "price": price,
-                                "fee": abs(usdt_diff) * 0.002,  # szacowany fee
+                                "fee": abs(usdt_diff) * 0.002,
                                 "pnl": 0,
-                                "order_id": f"log_buy_{len(trades)}"
+                                "order_id": f"log_{stable_key}"
                             })
 
                     # SELL: dajemy MEWC, dostajemy USDT
                     elif mewc_diff < -100 and usdt_diff > 0.001:
                         price = abs(usdt_diff / mewc_diff) if mewc_diff != 0 else 0
                         if price > 0:
+                            qty = round(abs(mewc_diff), 4)
+                            stable_key = hashlib.sha256(
+                                f"SELL|{ts_for_trade}|{qty}|{price:.10f}".encode()
+                            ).hexdigest()[:16]
                             trades.append({
-                                "timestamp": line_ts or prev_ts or datetime.now().isoformat(),
+                                "timestamp": ts_for_trade,
                                 "side": "SELL",
-                                "quantity": round(abs(mewc_diff), 4),
+                                "quantity": qty,
                                 "price": price,
                                 "fee": abs(usdt_diff) * 0.002,
                                 "pnl": 0,
-                                "order_id": f"log_sell_{len(trades)}"
+                                "order_id": f"log_{stable_key}"
                             })
 
                 prev_mewc, prev_usdt = mewc_total, usdt_total
@@ -524,35 +547,39 @@ def parse_fills_from_logs() -> list:
 
 @app.get("/api/fills")
 async def api_fills():
-    """Get trades with calculated P&L - fallback to log parsing"""
-    trades = await run_blocking(data_store.get_trades, 50, 30)
-    
-    if not trades:
-        logger.info("No trades in DB, trying log parsing")
-        log_trades = parse_fills_from_logs()
-        if log_trades:
-            logger.info("Parsed %s trades from logs", len(log_trades))
-            for t in log_trades:
-                await run_blocking(data_store.add_trade, t["side"], t["quantity"], t["price"], t["fee"], t["order_id"], None, t.get("timestamp"))
-            trades = await run_blocking(data_store.get_trades, 50, 30)
+    """Get trades with calculated P&L - always sync from logs to DB"""
+    # Always parse logs and sync to DB (stable order_id ensures safe deduplication)
+    log_trades = await run_blocking(parse_fills_from_logs)
+    if log_trades:
+        logger.info("Parsed %s trades from logs, syncing to DB", len(log_trades))
+        added = 0
+        for t in log_trades:
+            ok = await run_blocking(data_store.add_trade, t["side"], t["quantity"], t["price"], t["fee"], t["order_id"], None, t.get("timestamp"))
+            if ok:
+                added += 1
+        if added:
+            logger.info("Added %s new trades to DB from logs", added)
+
+    trades = await run_blocking(data_store.get_trades, 200, 90)
     logger.info("Fills loaded from DB count=%s", len(trades))
-    
+
     final_result = enrich_trades_with_realized_pnl(trades)
     logger.info("Returning fills count=%s", len(final_result))
     return final_result
+
 
 @app.post("/api/trades/sync-from-exchange")
 async def sync_trades():
     logger.info("Syncing trades from exchange")
     result = await run_blocking(api_client.get_my_trades, "MEWC_USDT", 200)
-    
+
     if "error" in result:
         logger.error("Sync error: %s", result["error"])
         return {"status": "error", "message": result["error"]}
-    
+
     fills = result.get("trades", result) if isinstance(result, dict) else result
     logger.info("Got %s trades from API", len(fills))
-    
+
     added = 0
     existing = await run_blocking(data_store.get_trades, 10000, 365)
     existing_keys = {str(t.get("dedupe_key") or "") for t in existing}
@@ -842,7 +869,7 @@ async def api_errors():
 async def get_profitability_stats():
     """Get detailed profitability statistics."""
     trades = await run_blocking(data_store.get_trades, 1000, 30)
-    
+
     if not trades:
         return {
             "total_trades": 0,
@@ -856,7 +883,7 @@ async def get_profitability_stats():
             "profit_factor": 0,
             "methodology": "Realized FIFO PnL (fees included per fill)",
         }
-    
+
     total_trades = len(trades)
     total_volume = sum(sf(t.get("quantity")) * sf(t.get("price")) for t in trades)
     total_fees = sum(sf(t.get("fee")) for t in trades)

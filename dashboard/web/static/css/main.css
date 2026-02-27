@@ -1,8 +1,8 @@
 /* ============================================================
-   MEWC Trading Dashboard — Design System
-   Dark cyberpunk / glassmorphism aesthetic
-   Font: Syne (display) + JetBrains Mono (numbers/code)
-   ============================================================ */
+ *  MEWC Trading Dashboard — Design System
+ *  Dark cyberpunk / glassmorphism aesthetic
+ *  Font: Syne (display) + JetBrains Mono (numbers/code)
+ *  ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;600&display=swap');
 
@@ -70,9 +70,9 @@ body {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 80% 60% at 15% 20%, rgba(255,100,0,0.07) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 80% at 85% 70%, rgba(108,77,255,0.07) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 50% at 50% 50%, rgba(79,195,247,0.04) 0%, transparent 70%);
+  radial-gradient(ellipse 80% 60% at 15% 20%, rgba(255,100,0,0.07) 0%, transparent 60%),
+  radial-gradient(ellipse 60% 80% at 85% 70%, rgba(108,77,255,0.07) 0%, transparent 60%),
+  radial-gradient(ellipse 50% 50% at 50% 50%, rgba(79,195,247,0.04) 0%, transparent 70%);
   animation: mesh-drift 20s ease-in-out infinite alternate;
   filter: blur(40px);
 }
@@ -91,8 +91,8 @@ body {
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(255,149,0,0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,149,0,0.025) 1px, transparent 1px);
+  linear-gradient(rgba(255,149,0,0.025) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255,149,0,0.025) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 80% at center, black 30%, transparent 100%);
   -webkit-mask-image: radial-gradient(ellipse 80% 80% at center, black 30%, transparent 100%);
@@ -129,6 +129,8 @@ body {
   width: 44px;
   height: 44px;
   flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
   filter: drop-shadow(0 0 10px rgba(255,149,0,0.5));
   animation: logo-pulse 3s ease-in-out infinite;
 }
@@ -338,8 +340,8 @@ body {
   -webkit-backdrop-filter: blur(16px);
   box-shadow: var(--shadow), var(--shadow-glow), inset 0 1px 0 rgba(255,255,255,0.04);
   transition: transform 0.28s cubic-bezier(0.22,1,0.36,1),
-              border-color 0.28s ease,
-              box-shadow 0.28s ease;
+  border-color 0.28s ease,
+  box-shadow 0.28s ease;
   position: relative;
   overflow: hidden;
 }
@@ -494,6 +496,7 @@ body {
 .ladder-ask, .ladder-bid {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 3px 6px;
   border-radius: 4px;
   margin: 1px 0;
@@ -501,20 +504,26 @@ body {
   overflow: hidden;
 }
 
-.ladder-bar {
+/* Bar lives as ::before on the row — always behind text, never clips it */
+.ladder-ask::before,
+.ladder-bid::before {
+  content: '';
   position: absolute;
   top: 0; bottom: 0;
   border-radius: 3px;
   z-index: 0;
   transition: width 0.4s ease;
+  width: var(--bar-w, 0%);
 }
+.ladder-ask::before { background: rgba(255,61,90,0.15); right: 0; }
+.ladder-bid::before { background: rgba(0,230,118,0.12); left: 0; }
 
-.ladder-ask .ladder-bar { background: rgba(255,61,90,0.12); right: 0; }
-.ladder-bid .ladder-bar { background: rgba(0,230,118,0.10); left: 0; }
+/* Hide the old span bar — width drives the CSS var on the element via JS */
+.ladder-bar { display: none; }
 
-.ladder-ask .ladder-price { color: var(--red); position: relative; z-index: 1; }
-.ladder-bid .ladder-price { color: var(--green); position: relative; z-index: 1; }
-.ladder-qty  { color: var(--text-dim); position: relative; z-index: 1; }
+.ladder-ask .ladder-price { color: var(--red);   position: relative; z-index: 1; }
+.ladder-bid .ladder-price { color: var(--green);  position: relative; z-index: 1; }
+.ladder-qty               { color: var(--text-dim); position: relative; z-index: 1; }
 
 .ladder-spread {
   text-align: center;
@@ -823,19 +832,22 @@ select option { background: #0e101f; color: var(--text); }
   background: rgba(255,149,0,0.13) !important;
   position: relative;
 }
-.ladder-ask.mine::after,
-.ladder-bid.mine::after {
-  content: '◀ MINE';
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 0.62rem;
+.ladder-ask.mine .ladder-qty::after,
+.ladder-bid.mine .ladder-qty::after {
+  content: 'MINE';
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 0.58rem;
   color: var(--accent);
   font-family: var(--mono);
   font-weight: 700;
-  letter-spacing: 0.05em;
-  pointer-events: none;
+  letter-spacing: 0.04em;
+  background: rgba(255,149,0,0.15);
+  border: 1px solid rgba(255,149,0,0.35);
+  border-radius: 3px;
+  padding: 0 3px;
+  vertical-align: middle;
+  line-height: 1.6;
 }
 
 /* ── Small helpers ─────────────────────────────────────── */

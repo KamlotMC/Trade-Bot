@@ -310,8 +310,7 @@ function renderOrderbook(ob, myOrders) {
     const qty = Number(r.quantity || r.qty || 0);
     const pct = maxQty > 0 ? (qty / maxQty * 100).toFixed(1) : 0;
     const mine = isMyPrice(px) ? ' mine' : '';
-    return `<div class="ladder-${side}${mine}">
-    <span class="ladder-bar" style="width:${pct}%"></span>
+    return `<div class="ladder-${side}${mine}" style="--bar-w:${pct}%">
     <span class="ladder-price">${price(px)}</span>
     <span class="ladder-qty">${fmtInt(qty)}</span>
     </div>`;

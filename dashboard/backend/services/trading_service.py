@@ -20,11 +20,28 @@ class TradingService:
 
     def get_open_orders(self, symbol: str = "MEWC_USDT") -> List[Dict[str, Any]]:
         result = self.api_client.get_open_orders(symbol)
+
+        # Handle error response
         if isinstance(result, dict) and "error" in result:
             return []
 
-        rows = result.get("orders", result.get("data", result)) if isinstance(result, dict) else result
-        if not isinstance(rows, list):
+        # Normalize all possible response shapes to a flat list
+        if isinstance(result, list):
+            rows = result
+        elif isinstance(result, dict):
+            # Try common wrapper keys in order of preference
+            for key in ("orders", "data", "result", "items"):
+                val = result.get(key)
+                if isinstance(val, list):
+                    rows = val
+                    break
+            else:
+                # If no wrapper key found, treat the dict values as a list
+                rows = []
+        else:
+            rows = []
+
+        if not rows:
             return []
 
         normalized = []
@@ -32,17 +49,15 @@ class TradingService:
         open_statuses = {"OPEN", "NEW", "PARTIALLY_FILLED", "PARTIAL", "ACTIVE"}
 
         for order in rows:
+            if not isinstance(order, dict):
+                continue
             side = str(order.get("side") or order.get("type") or "").upper()
             price_val = self._sf(order.get("price") or order.get("rate") or order.get("limitPrice"))
             qty_val = self._sf(order.get("quantity") or order.get("origQty") or order.get("qty") or order.get("amount"))
             status = str(order.get("status") or order.get("state") or "OPEN").upper()
             filled = self._sf(order.get("filled") or order.get("executedQty") or order.get("cumQty"))
 
-            remaining_raw = order.get("remaining")
-            if remaining_raw is None:
-                remaining_raw = order.get("leavesQty")
-            if remaining_raw is None:
-                remaining_raw = order.get("openQty")
+            remaining_raw = order.get("remaining") or order.get("leavesQty") or order.get("openQty")
             remaining = self._sf(remaining_raw, max(qty_val - filled, 0.0))
             if remaining <= 0 and qty_val > filled:
                 remaining = max(qty_val - filled, 0.0)
@@ -57,7 +72,6 @@ class TradingService:
                     "remaining": remaining,
                     "status": status,
                     "symbol": order.get("symbol", symbol),
-                    "raw": order,
                 }
             )
 

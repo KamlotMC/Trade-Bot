@@ -75,7 +75,9 @@ class NonKYCClient:
     def _sign_get(self, url: str) -> Dict[str, str]:
         """Build signed headers for a GET request."""
         nonce = str(int(time.time() * 1e3))
-        data_to_sign = f"{self.api_key}{url}{nonce}"
+        # Sign only the base URL without query string (NonKYC API v2 spec)
+        base_url = url.split("?")[0]
+        data_to_sign = f"{self.api_key}{base_url}{nonce}"
         signature = hmac.new(
             self.api_secret.encode(),
             data_to_sign.encode(),

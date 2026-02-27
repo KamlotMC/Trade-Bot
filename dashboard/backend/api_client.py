@@ -30,11 +30,18 @@ class NonKYCClient:
         self.session = requests.Session()
         self.session.headers.update({"Accept": "application/json"})
     
-    def _sign(self, full_url: str, body: str = "") -> Dict[str, str]:
-        """Generate signature: api_key + full_url + body + nonce"""
+    def _sign(self, url: str, body: str = "") -> Dict[str, str]:
+        """Generate HMAC-SHA256 signature zgodnie z NonKYC API v2.
+        
+        Format: HMAC(api_key + url_without_query + body + nonce)
+        gdzie url_without_query to URL bez parametrów GET.
+        Taki sam format jak w market_maker/exchange_client.py.
+        """
         nonce = str(int(time.time() * 1000))
-        data = f"{self.api_key}{full_url}{body}{nonce}"
-        sig = hmac.new(self.api_secret.encode(), data.encode(), hashlib.sha256).hexdigest()
+        # Wyciągnij tylko bazowy URL bez query string
+        base_url = url.split("?")[0]
+        data_to_sign = f"{self.api_key}{base_url}{body}{nonce}"
+        sig = hmac.new(self.api_secret.encode(), data_to_sign.encode(), hashlib.sha256).hexdigest()
         return {"X-API-KEY": self.api_key, "X-API-NONCE": nonce, "X-API-SIGN": sig}
     
     def _request(
@@ -138,7 +145,15 @@ class NonKYCClient:
         return {"error": "All trade endpoints failed — NonKYC API może nie udostępniać historii tradów publicznie"}
     
     def get_open_orders(self, symbol: str = "MEWC_USDT") -> Dict:
-        return self._request("GET", "account/orders", params={"symbol": symbol.replace("_", "")}, signed=True)
+        # Try both symbol formats: MEWC/USDT and MEWC_USDT
+        # Do NOT pass status=active — NonKYC returns active orders by default on this endpoint
+        sym_slash = symbol.replace("_", "/")
+        sym_under = symbol.replace("/", "_")
+        for sym in (sym_slash, sym_under):
+            result = self._request("GET", "account/orders", params={"symbol": sym}, signed=True)
+            if "error" not in result:
+                return result
+        return {"error": f"Failed to get open orders for {symbol}"}
 
     def get_orderbook(self, symbol: str = "MEWC_USDT", limit: int = 20) -> Dict:
         symbol_no_underscore = symbol.replace("_", "")

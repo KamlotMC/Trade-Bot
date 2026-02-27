@@ -4,695 +4,453 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MEWC Trading Center</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    :root {
-      --bg:#05060b;
-      --panel:#121525cc;
-      --panel-border:#ff950042;
-      --accent:#ff9500;
-      --text:#f3f4ff;
-      --muted:#99a0bf;
-    }
-    body {
-      font-family: Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-      background: radial-gradient(circle at 15% 10%, #21244a 0%, var(--bg) 45%) fixed;
-      color:var(--text);
-      padding:20px;
-      min-height:100vh;
-      position:relative;
-      overflow-x:hidden;
-    }
-    body::before {
-      content:"";
-      position:fixed;
-      inset:-30%;
-      pointer-events:none;
-      background:radial-gradient(circle at 20% 25%, #ff950022, transparent 36%), radial-gradient(circle at 80% 75%, #6c4dff22, transparent 32%);
-      animation:aurora 16s ease-in-out infinite alternate;
-      z-index:-1;
-      filter:blur(24px);
-    }
-    @keyframes aurora {
-      0% { transform:translate3d(-2%, -1%, 0) scale(1); }
-      100% { transform:translate3d(2%, 1%, 0) scale(1.06); }
-    }
-    .header { text-align:center; margin-bottom:18px; }
-    .header h1 { color:#ff9500; font-weight:300; letter-spacing:2px; text-transform:uppercase; }
-    .status-bar { display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:16px; margin:10px auto 14px; padding:10px 16px; background:rgba(255,149,0,0.05); border:1px solid rgba(255,149,0,.2); border-radius:10px; position:sticky; top:8px; z-index:10; backdrop-filter: blur(6px); }
-    .status-item { display:flex; gap:8px; align-items:center; color:#888; font-size:.9em; }
-    .status-controls { display:flex; align-items:center; gap:8px; }
-    .status-select { padding:5px 8px; border-radius:6px; border:1px solid rgba(255,149,0,.35); background:#0f0f0f; color:#ff9500; }
-    .mini-btn { border:1px solid rgba(255,149,0,.45); background:rgba(255,149,0,.12); color:#ffb24a; border-radius:6px; padding:5px 9px; cursor:pointer; }
-    .status-indicator { width:8px; height:8px; border-radius:50%; background:#ff3b30; }
-    .status-indicator.live { background:#34c759; }
-
-    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-    .tab-btn { border:1px solid rgba(255,149,0,.3); background:rgba(255,149,0,.06); color:#ff9500; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:.85em; }
-    .tab-btn.active { background:rgba(255,149,0,.2); border-color:#ff9500; }
-    .tab-panel { display:none; opacity:0; transform:translateY(10px); }
-    .tab-panel.active { display:block; animation:panelIn .35s ease forwards; }
-    @keyframes panelIn {
-      to { opacity:1; transform:translateY(0); }
-    }
-
-    .grid { display:grid; gap:15px; margin-bottom:15px; }
-    .row-1 { grid-template-columns:repeat(3,1fr); }
-    .row-2 { grid-template-columns:repeat(3,1fr); }
-    .row-3 { grid-template-columns:1fr 2fr; }
-    .row-4 { grid-template-columns:2fr 1fr; }
-    .row-2-even { grid-template-columns:1fr 1fr; }
-
-    .card { background:var(--panel); border:1px solid var(--panel-border); border-radius:12px; padding:18px; backdrop-filter:blur(8px); box-shadow:0 8px 24px rgba(0,0,0,.25); transition:transform .25s ease,border-color .25s ease; }
-    .card:hover { transform:translateY(-2px); border-color:rgba(255,149,0,.45); }
-    .card h2 { color:#ff9500; font-size:.82em; margin-bottom:12px; text-transform:uppercase; letter-spacing:1px; }
-    .stat { display:flex; justify-content:space-between; padding:6px 0; font-size:.86em; }
-    .stat-label { color:var(--muted); }
-    .stat-value { color:var(--accent); font-weight:600; }
-    .positive { color:#34c759; }
-    .negative { color:#ff3b30; }
-    .price-large { font-size:2em; color:#ff9500; font-weight:300; }
-
-    .portfolio-item { text-align:center; border-bottom:1px solid rgba(255,149,0,.1); padding:12px 0; }
-    .portfolio-item:last-child { border-bottom:none; }
-    .portfolio-label { display:flex; gap:8px; justify-content:center; align-items:center; color:#ff9500; font-size:.85em; text-transform:uppercase; }
-    .portfolio-amount { font-size:1.7em; }
-    .portfolio-value { color:#777; font-size:.85em; margin-top:5px; }
-    .coin-icon { width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; overflow:hidden; }
-    .coin-icon.mewc { background:linear-gradient(135deg,#ff6b00,#ff9500); }
-    .coin-icon.usdt { background:#26a17b; }
-
-    .order-item { padding:10px; margin:6px 0; border-radius:8px; display:flex; justify-content:space-between; align-items:center; background:rgba(8,12,28,.55); font-size:.85em; cursor:pointer; transition:transform .2s ease, background .2s ease; }
-    .order-item.buy { border-left:2px solid #34c759; }
-    .order-item.sell { border-left:2px solid #ff3b30; }
-    .trade-row:hover, .order-item:hover { background:rgba(255,149,0,.12); transform:translateX(2px); }
-    .scroll-box { max-height:300px; overflow-y:auto; padding-right:4px; }
-
-    table { width:100%; border-collapse:collapse; font-size:.85em; }
-    th { color:#ff9500; border-bottom:1px solid rgba(255,149,0,.3); text-align:left; padding:8px; }
-    td { border-bottom:1px solid rgba(255,149,0,.08); padding:8px; }
-
-    .ladder { display:grid; gap:4px; max-height:280px; overflow:auto; }
-    .ladder-row { display:flex; justify-content:space-between; background:rgba(0,0,0,.35); border-radius:4px; padding:6px 8px; font-size:.8em; }
-    .ladder-row.ask { border-left:2px solid #ff3b30; }
-    .ladder-row.bid { border-left:2px solid #34c759; }
-    .ladder-row.mine { box-shadow:0 0 0 1px #ff9500 inset; }
-
-    .input, select { width:100%; margin-top:8px; margin-bottom:10px; padding:8px; border:1px solid rgba(255,149,0,.3); background:#0f0f0f; color:#fff; border-radius:6px; }
-    .btn { border:1px solid rgba(255,149,0,.4); background:rgba(255,149,0,.08); color:#ff9500; padding:8px 12px; border-radius:6px; cursor:pointer; transition:all .2s ease; }
-    .btn:hover { background:rgba(255,149,0,.2); transform:translateY(-1px); }
-    .btn.danger { border-color:rgba(255,59,48,.6); color:#ff3b30; background:rgba(255,59,48,.1); }
-    .quick-row { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
-    .chip { border:1px solid rgba(255,149,0,.35); color:#ff9500; background:rgba(255,149,0,.06); padding:4px 8px; border-radius:999px; cursor:pointer; font-size:.75em; }
-    .inline-check { display:flex; align-items:center; gap:8px; margin:6px 0 10px; color:var(--muted); font-size:.85em; }
-
-    .details-modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:1000; }
-    .details-modal.open { display:flex; }
-    .modal-card { width:min(92vw,560px); background:#101010; border:1px solid rgba(255,149,0,.4); border-radius:10px; padding:18px; }
-    .modal-actions { margin-top:12px; display:flex; justify-content:flex-end; gap:8px; }
-    .small-muted { color:#777; font-size:.82em; margin-bottom:8px; }
-    .chart-wrap { position:relative; width:100%; height:320px; }
-    .chart-wrap canvas { width:100% !important; height:100% !important; }
-    .toast {
-      position:fixed;
-      right:16px;
-      bottom:16px;
-      z-index:1200;
-      background:#14182a;
-      border:1px solid rgba(255,149,0,.4);
-      color:#fff;
-      padding:10px 14px;
-      border-radius:8px;
-      opacity:0;
-      transform:translateY(10px);
-      pointer-events:none;
-      transition:all .2s ease;
-    }
-    .toast.show { opacity:1; transform:translateY(0); }
-
-    @media (max-width: 980px){
-      .row-1,.row-2,.row-3,.row-4,.row-2-even { grid-template-columns:1fr; }
-      body { padding:14px; }
-      .status-bar { justify-content:flex-start; }
-    }
-  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/main.css" />
 </head>
 <body>
-  <div class="header">
-    <div class="status-bar">
-      <div class="status-item"><div id="statusIndicator" class="status-indicator"></div><span id="statusText">OFFLINE</span></div>
-      <div class="status-item"><span>Refresh:</span><span id="countdown" style="color:#ff9500;font-weight:600;">5s</span></div>
-      <div class="status-item"><span>Cycle:</span><span id="botCycle" style="color:#ff9500;font-weight:600;">-</span></div>
-      <div class="status-item"><span>Bot:</span><span id="botSummary" style="color:#99a0bf;">No data</span></div>
-      <div class="status-controls">
-        <button class="mini-btn" onclick="update(true)"><i class="fas fa-rotate"></i> Refresh now</button>
-        <select id="refreshSelect" class="status-select">
-          <option value="5000">5s</option>
-          <option value="10000">10s</option>
-          <option value="15000">15s</option>
-        </select>
+
+<!-- Animated background layers -->
+<div class="bg-mesh"></div>
+<div class="bg-grid"></div>
+<div class="bg-canvas"><canvas id="bgCanvas"></canvas></div>
+
+<div class="app-wrapper">
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="header-brand">
+      <svg class="brand-logo" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="22" cy="22" r="22" fill="url(#bg1)"/>
+        <defs>
+          <linearGradient id="bg1" x1="0" y1="0" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#ff6b00"/><stop offset="100%" stop-color="#ffcc00"/>
+          </linearGradient>
+        </defs>
+        <!-- Cat ears -->
+        <path d="M10 19 L14 10 L18 17" fill="rgba(255,255,255,0.85)"/>
+        <path d="M34 19 L30 10 L26 17" fill="rgba(255,255,255,0.85)"/>
+        <!-- Eyes -->
+        <ellipse cx="18.5" cy="22" rx="2.5" ry="3" fill="white"/>
+        <ellipse cx="25.5" cy="22" rx="2.5" ry="3" fill="white"/>
+        <ellipse cx="19" cy="22.5" rx="1.2" ry="1.8" fill="#c44a00"/>
+        <ellipse cx="26" cy="22.5" rx="1.2" ry="1.8" fill="#c44a00"/>
+        <!-- Nose -->
+        <path d="M20.5 26 L22 24.8 L23.5 26 Z" fill="#ff9500"/>
+        <!-- Mouth -->
+        <path d="M20 27 Q22 28.5 24 27" stroke="white" stroke-width="0.8" fill="none"/>
+        <!-- Whiskers -->
+        <path d="M7 24.5 L14.5 23.5 M7 26.5 L14.5 25.5" stroke="white" stroke-width="0.8" opacity="0.7"/>
+        <path d="M37 24.5 L29.5 23.5 M37 26.5 L29.5 25.5" stroke="white" stroke-width="0.8" opacity="0.7"/>
+        <!-- Chart wave at bottom -->
+        <path d="M10 34 L14 30 L18 33 L22 28 L26 31 L30 27 L34 29" stroke="#ffdd00" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">MEWC Trading</span>
+        <span class="brand-sub">Market Making Dashboard</span>
       </div>
-      <div class="status-item"><span>Last update:</span><span id="lastUpdate" style="color:#99a0bf;">-</span></div>
     </div>
-    <h1>MEWC Trading Center</h1>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <span id="lastUpdate" class="small-muted" style="font-family:var(--mono);font-size:.72rem">—</span>
+      <button class="mini-btn" onclick="update(true)"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+  </header>
+
+  <!-- ── Status bar ── -->
+  <div class="status-bar">
+    <div class="status-pill">
+      <div id="statusIndicator" class="bot-dot"></div>
+      <span id="statusText">OFFLINE</span>
+    </div>
+    <div class="status-pill sep"></div>
+    <div class="status-pill">
+      <i class="fas fa-rotate" style="color:var(--accent);font-size:.72rem"></i>
+      Cycle: <strong id="botCycle">—</strong>
+    </div>
+    <div class="status-pill sep"></div>
+    <div class="status-pill" style="max-width:400px;overflow:hidden">
+      <span id="botSummary" class="small-muted" style="font-family:var(--mono);font-size:.72rem;white-space:nowrap">No data</span>
+    </div>
+    <div class="status-pill" style="margin-left:auto;gap:6px">
+      <span class="small-muted">Refresh:</span>
+      <select id="refreshSelect" class="refresh-select">
+        <option value="5000">5s</option>
+        <option value="10000">10s</option>
+        <option value="30000">30s</option>
+        <option value="60000">1 min</option>
+      </select>
+    </div>
+    <div class="status-pill">
+      <span id="countdown" style="font-family:var(--mono);color:var(--accent);font-weight:600;font-size:.8rem">5s</span>
+    </div>
+    <div class="countdown-track" style="flex-basis:100%;margin-top:2px">
+      <div id="countdownFill" class="countdown-fill"></div>
+    </div>
   </div>
 
-  <div class="tabs" id="tabsNav">
-    <button class="tab-btn active" data-tab="overview">Overview</button>
-    <button class="tab-btn" data-tab="trading">Trading</button>
-    <button class="tab-btn" data-tab="risk">Risk</button>
-    <button class="tab-btn" data-tab="automation">Automation</button>
-    <button class="tab-btn" data-tab="execution">Execution</button>
-    <button class="tab-btn" data-tab="backtest">Backtest</button>
-    <button class="tab-btn" data-tab="journal">Journal</button>
-  </div>
+  <!-- ── Tabs ── -->
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="overview"><i class="fas fa-gauge-high"></i> Overview</button>
+    <button class="tab-btn" data-tab="trading"><i class="fas fa-bolt"></i> Trading</button>
+    <button class="tab-btn" data-tab="pnl"><i class="fas fa-chart-line"></i> P&L</button>
+    <button class="tab-btn" data-tab="risk"><i class="fas fa-shield-halved"></i> Risk</button>
+    <button class="tab-btn" data-tab="automation"><i class="fas fa-robot"></i> Automation</button>
+    <button class="tab-btn" data-tab="analytics"><i class="fas fa-microscope"></i> Analytics</button>
+    <button class="tab-btn" data-tab="backtest"><i class="fas fa-flask"></i> Backtest</button>
+  </nav>
 
-  <section id="tab-overview" class="tab-panel active">
-    <div class="grid row-1">
+  <!-- ══════════════ TAB: OVERVIEW ══════════════ -->
+  <div id="tab-overview" class="tab-panel active">
+
+    <!-- Top row: Price + Portfolio + PnL stats -->
+    <div class="grid overview-top-row" style="margin-bottom:14px">
+
+      <!-- MEWC Price -->
       <div class="card">
-        <h2><i class="fas fa-chart-line"></i> MEWC Price</h2>
-        <div class="price-large" id="price">-</div>
-        <div id="priceChange" style="margin:10px 0;font-size:.9em;">-</div>
-        <div class="stat"><span class="stat-label">Bid</span><span class="stat-value" id="bid">-</span></div>
-        <div class="stat"><span class="stat-label">Ask</span><span class="stat-value" id="ask">-</span></div>
-        <div class="stat"><span class="stat-label">24h Volume</span><span class="stat-value" id="volume">-</span></div>
+        <div class="card-title"><i class="fas fa-tag"></i> MEWC / USDT</div>
+        <div class="price-hero">
+          <span class="price-hero-label">Last price</span>
+          <div class="price-hero-value" id="price">—</div>
+        </div>
+        <div id="priceChange" class="price-change" style="margin-bottom:12px">—</div>
+        <div class="stat">
+          <span class="stat-label"><i class="fas fa-caret-up" style="color:var(--green)"></i> Bid</span>
+          <span class="stat-value mono" id="bid">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label"><i class="fas fa-caret-down" style="color:var(--red)"></i> Ask</span>
+          <span class="stat-value mono" id="ask">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">24h Volume</span>
+          <span class="stat-value" id="volume">—</span>
+        </div>
+      </div>
+
+      <!-- Portfolio -->
+      <div class="card">
+        <div class="card-title"><i class="fas fa-wallet"></i> Portfolio</div>
+        <!-- MEWC -->
+        <div class="portfolio-row">
+          <div class="coin-icon mewc">
+            <svg viewBox="0 0 20 20" width="16" height="16">
+              <path d="M3 13V7l3.5 3.5L10 7l3.5 3.5L17 7v6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="portfolio-name" style="color:var(--accent)">MEWC</span>
+          <span class="portfolio-amount" id="mewcBalance">—</span>
+          <span class="portfolio-value" id="mewcValue">—</span>
+        </div>
+        <!-- USDT -->
+        <div class="portfolio-row">
+          <div class="coin-icon usdt">
+            <svg viewBox="0 0 20 20" width="16" height="16">
+              <path d="M10 4v12M6 7h8M7 10h6" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="portfolio-name" style="color:#26c99e">USDT</span>
+          <span class="portfolio-amount" id="usdtBalance">—</span>
+          <span class="portfolio-value" id="usdtValue">—</span>
+        </div>
+        <div class="separator"></div>
+        <div class="stat">
+          <span class="stat-label">Total Value</span>
+          <span class="num-md" id="totalValue">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">P&L since 07:00</span>
+          <span class="stat-value" id="portfolioPnL">—</span>
+        </div>
+      </div>
+
+      <!-- Daily PnL -->
+      <div class="card">
+        <div class="card-title"><i class="fas fa-sun"></i> Daily</div>
+        <div class="num-xl" id="pnlDaily">—</div>
+        <div class="stat" style="margin-top:10px"><span class="stat-label">Trades</span><span class="stat-value" id="tradesDaily">—</span></div>
+      </div>
+
+      <!-- Weekly PnL -->
+      <div class="card">
+        <div class="card-title"><i class="fas fa-calendar-week"></i> Weekly</div>
+        <div class="num-xl" id="pnlWeekly">—</div>
+        <div class="stat" style="margin-top:10px"><span class="stat-label">Trades</span><span class="stat-value" id="tradesWeekly">—</span></div>
+      </div>
+
+      <!-- Monthly PnL -->
+      <div class="card">
+        <div class="card-title"><i class="fas fa-calendar"></i> Monthly</div>
+        <div class="num-xl" id="pnlMonthly">—</div>
+        <div class="stat" style="margin-top:10px"><span class="stat-label">Trades</span><span class="stat-value" id="tradesMonthly">—</span></div>
+      </div>
+
+      <!-- Win Rate -->
+      <div class="card">
+        <div class="card-title"><i class="fas fa-trophy"></i> Win Rate</div>
+        <div class="num-xl" id="winRate">—</div>
+        <div class="stat" style="margin-top:10px"><span class="stat-label">Total</span><span class="stat-value" id="totalTrades">—</span></div>
+      </div>
+
+    </div>
+
+    <!-- Chart + Orderbook + Orders -->
+    <div class="grid row-3" style="margin-bottom:14px">
+      <div class="card">
+        <div class="card-title"><i class="fas fa-chart-area"></i> Portfolio History</div>
+        <div class="chart-wrap"><canvas id="portfolioChart"></canvas></div>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr 1fr;gap:14px">
+        <div class="card">
+          <div class="card-title"><i class="fas fa-layer-group"></i> Orderbook</div>
+          <div id="orderbookLadder" class="ladder"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><i class="fas fa-list"></i> Open Orders</div>
+          <div id="ordersList" class="scroll-box"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trades + Errors -->
+    <div class="grid row-4">
+      <div class="card">
+        <div class="card-title"><i class="fas fa-receipt"></i> Recent Trades</div>
+        <div class="scroll-box">
+          <table class="trades-table">
+            <thead><tr><th>Time</th><th>Side</th><th>Qty</th><th>Price</th><th>P&L</th></tr></thead>
+            <tbody id="tradesTable"></tbody>
+          </table>
+        </div>
       </div>
       <div class="card">
-        <h2><i class="fas fa-wallet"></i> Portfolio</h2>
-        <div class="portfolio-item">
-          <div class="portfolio-label"><span class="coin-icon mewc"><svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="12" fill="url(#mewg)"/><defs><linearGradient id="mewg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ff6b00"/><stop offset="100%" stop-color="#ff9500"/></linearGradient></defs><path d="M6 15V9l3 3 3-3 3 3 3-3v6" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>MEWC</div>
-          <div class="portfolio-amount" id="mewcBalance">-</div>
-          <div class="portfolio-value" id="mewcValue">-</div>
-        </div>
-        <div class="portfolio-item">
-          <div class="portfolio-label"><span class="coin-icon usdt"><svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="12" fill="#26a17b"/><path d="M6 8h12M9 8v2.2c1 .7 5 .7 6 0V8M12 10.2V16" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>USDT</div>
-          <div class="portfolio-amount" id="usdtBalance">-</div>
-          <div class="portfolio-value" id="usdtValue">-</div>
-        </div>
-        <div class="stat"><span class="stat-label">Total Value</span><span id="totalValue" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">P&L (since 7:00)</span><span id="portfolioPnL" class="stat-value">-</span></div>
+        <div class="card-title"><i class="fas fa-triangle-exclamation" style="color:var(--red)"></i> Errors</div>
+        <div id="errorsList" class="scroll-box"></div>
       </div>
-      <div class="card" id="pnlDailyCard"><h2>Daily P&L</h2><div id="pnlDaily" class="price-large">-</div><div class="stat"><span class="stat-label">Trades</span><span id="tradesDaily" class="stat-value">-</span></div></div>
-      <div class="card"><h2>Weekly P&L</h2><div id="pnlWeekly" class="price-large">-</div><div class="stat"><span class="stat-label">Trades</span><span id="tradesWeekly" class="stat-value">-</span></div></div>
-      <div class="card"><h2>Monthly P&L</h2><div id="pnlMonthly" class="price-large">-</div><div class="stat"><span class="stat-label">Trades</span><span id="tradesMonthly" class="stat-value">-</span></div></div>
-      <div class="card"><h2>Win Rate</h2><div id="winRate" class="price-large">-</div><div class="stat"><span class="stat-label">Total</span><span id="totalTrades" class="stat-value">-</span></div></div>
     </div>
-    <div class="grid row-3">
-      <div class="card"><h2>Open Orders</h2><div id="ordersList" class="scroll-box"></div></div>
-      <div class="card"><h2>Portfolio Chart</h2><div class="chart-wrap"><canvas id="portfolioChart"></canvas></div></div>
-    </div>
-    <div class="grid row-3">
-      <div class="card"><h2>Orderbook Ladder</h2><div id="orderbookLadder" class="ladder"></div></div>
-      <div class="card"><h2>Errors</h2><div id="errorsList" class="scroll-box"></div></div>
-    </div>
-  </section>
 
-  <section id="tab-trading" class="tab-panel">
+  </div><!-- /tab-overview -->
+
+  <!-- ══════════════ TAB: TRADING ══════════════ -->
+  <div id="tab-trading" class="tab-panel">
     <div class="grid row-2-even">
+
       <div class="card">
-        <h2><i class="fas fa-terminal"></i> Manual Order Panel</h2>
-        <select id="manualSide"><option>BUY</option><option>SELL</option></select>
-        <select id="manualType"><option>MARKET</option><option>LIMIT</option></select>
-        <input id="manualQty" class="input" type="number" step="0.0001" placeholder="Quantity" />
+        <div class="card-title"><i class="fas fa-terminal"></i> Manual Order</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <select id="manualSide"><option>BUY</option><option>SELL</option></select>
+          <select id="manualType"><option>MARKET</option><option>LIMIT</option></select>
+        </div>
+        <input id="manualQty" class="input" type="number" step="0.0001" placeholder="Quantity (MEWC)" />
         <div class="quick-row">
           <button class="chip" onclick="setQuickQty(25)">25%</button>
           <button class="chip" onclick="setQuickQty(50)">50%</button>
           <button class="chip" onclick="setQuickQty(75)">75%</button>
           <button class="chip" onclick="setQuickQty(100)">100%</button>
         </div>
-        <input id="manualPrice" class="input" type="number" step="0.00000001" placeholder="Limit price (only for LIMIT)" />
+        <input id="manualPrice" class="input" type="number" step="0.00000001" placeholder="Limit price" disabled />
         <label class="inline-check"><input id="manualReduceOnly" type="checkbox" /> Reduce-only</label>
-        <label class="inline-check"><input id="manualConfirmMode" type="checkbox" /> Confirm mode (large orders)</label>
-        <div id="manualValidation" class="small-muted" style="margin-top:4px;"></div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn" onclick="submitManualOrder()">Submit order</button>
-          <button class="btn danger" onclick="cancelAllOrders()">Cancel all</button>
-          <button class="btn" onclick="syncTradesFromExchange()">Sync trades</button>
+        <label class="inline-check"><input id="manualConfirmMode" type="checkbox" /> Confirm mode</label>
+        <div id="manualValidation" class="small-muted" style="min-height:18px;margin:6px 0"></div>
+        <div class="btn-row">
+          <button class="btn success" onclick="submitManualOrder()"><i class="fas fa-paper-plane"></i> Submit</button>
+          <button id="btnCancelAll" class="btn danger" onclick="cancelAllOrders()"><i class="fas fa-xmark"></i> Cancel all</button>
+          <button id="btnSyncTrades" class="btn" onclick="syncTradesFromExchange()"><i class="fas fa-arrows-rotate"></i> Sync</button>
         </div>
-        <div id="manualOrderResult" class="small-muted" style="margin-top:10px;"></div>
+        <div id="manualOrderResult" class="small-muted" style="margin-top:10px;font-family:var(--mono);font-size:.72rem;word-break:break-all;min-height:20px"></div>
       </div>
-      <div class="card">
-        <h2><i class="fas fa-exchange-alt"></i> Ostatnie Trade'y</h2>
-        <div class="small-muted">Click a trade to view details and close position.</div>
-        <div class="scroll-box">
-          <table>
-            <thead><tr><th>Time</th><th>Side</th><th>Qty</th><th>Price</th><th>P&L</th></tr></thead>
-            <tbody id="tradesTable"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </section>
 
-  <section id="tab-risk" class="tab-panel">
+      <div class="card">
+        <div class="card-title"><i class="fas fa-robot"></i> Bot Status</div>
+        <div class="stat"><span class="stat-label">Connection</span>
+          <span class="stat-value" style="display:flex;align-items:center;gap:7px">
+            <span id="statusIndicator2" class="bot-dot"></span><span id="statusText2">—</span>
+          </span>
+        </div>
+        <div class="stat"><span class="stat-label">Last cycle</span><span class="stat-value" id="botCycle2">—</span></div>
+        <div class="stat"><span class="stat-label">Mid price</span><span class="stat-value mono" id="botMid">—</span></div>
+        <div class="stat"><span class="stat-label">Skew</span><span class="stat-value mono" id="botSkew">—</span></div>
+        <div class="stat"><span class="stat-label">Active bids</span><span class="stat-value positive" id="botBids">—</span></div>
+        <div class="stat"><span class="stat-label">Active asks</span><span class="stat-value negative" id="botAsks">—</span></div>
+        <div class="separator"></div>
+        <div class="card-title"><i class="fas fa-star"></i> Profit Factor</div>
+        <div class="num-lg" id="livePf">—</div>
+      </div>
+
+    </div>
+  </div><!-- /tab-trading -->
+
+  <!-- ══════════════ TAB: P&L ══════════════ -->
+  <div id="tab-pnl" class="tab-panel">
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <span class="small-muted">Window:</span>
+      <button class="chip" onclick="setPnlFilter('today')">Today</button>
+      <button class="chip" onclick="setPnlFilter('7d')">7d</button>
+      <button class="chip" onclick="setPnlFilter('30d')">30d</button>
+      <select id="pnlSymbol" class="refresh-select" style="margin-left:10px"><option value="MEWC_USDT">MEWC/USDT</option></select>
+      <select id="pnlStrategy" class="refresh-select"><option value="default">Default strategy</option></select>
+    </div>
     <div class="grid row-2-even">
       <div class="card">
-        <h2><i class="fas fa-shield-alt"></i> Risk Cockpit</h2>
-        <div class="stat"><span class="stat-label">Inventory ratio</span><span id="riskInventory" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Target ratio</span><span id="riskTarget" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Skew</span><span id="riskSkew" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Session DD</span><span id="riskDrawdown" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Day DD</span><span id="riskDayDd" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Week DD</span><span id="riskWeekDd" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Exposure</span><span id="riskExposure" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Hard guard</span><span id="riskGuard" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Risk state</span><span id="riskState" class="stat-value">-</span></div>
+        <div class="card-title"><i class="fas fa-bolt"></i> Live P&L</div>
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:14px">
+          <div><div class="small-muted" style="margin-bottom:4px">Unrealized</div><div class="num-lg" id="liveUnrealized">—</div></div>
+          <div><div class="small-muted" style="margin-bottom:4px">Realized</div><div class="num-lg" id="liveRealized">—</div></div>
+          <div><div class="small-muted" style="margin-bottom:4px">Fees</div><div class="num-md" id="liveFees">—</div></div>
+          <div><div class="small-muted" style="margin-bottom:4px">Net profit</div><div class="num-lg" id="liveNetProfit">—</div></div>
+        </div>
       </div>
       <div class="card">
-        <h2><i class="fas fa-chart-line"></i> Live PnL / Equity</h2>
-        <div class="quick-row">
-          <button class="chip" onclick="setPnlFilter('today')">today</button>
-          <button class="chip" onclick="setPnlFilter('7d')">7d</button>
-          <button class="chip" onclick="setPnlFilter('30d')">30d</button>
-        </div>
-        <input id="pnlSymbol" class="input" value="MEWC_USDT" placeholder="symbol" />
-        <input id="pnlStrategy" class="input" value="default" placeholder="strategy" />
-        <div class="stat"><span class="stat-label">Unrealized</span><span id="liveUnrealized" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Realized</span><span id="liveRealized" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Fees</span><span id="liveFees" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Net</span><span id="liveNetProfit" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Profit factor</span><span id="livePf" class="stat-value">-</span></div>
+        <div class="card-title"><i class="fas fa-chart-line"></i> Equity Curve</div>
         <div class="chart-wrap"><canvas id="intradayCurve"></canvas></div>
       </div>
     </div>
-  </section>
+  </div><!-- /tab-pnl -->
 
-  <section id="tab-automation" class="tab-panel">
+  <!-- ══════════════ TAB: RISK ══════════════ -->
+  <div id="tab-risk" class="tab-panel">
+    <div class="grid row-2">
+      <div class="card">
+        <div class="card-title"><i class="fas fa-sliders"></i> Inventory</div>
+        <div id="riskInventoryMeter"></div>
+        <div id="riskExposureMeter"></div>
+        <div class="stat"><span class="stat-label">Inventory ratio</span><span class="stat-value" id="riskInventory">—</span></div>
+        <div class="stat"><span class="stat-label">Target ratio</span><span class="stat-value" id="riskTarget">—</span></div>
+        <div class="stat"><span class="stat-label">Skew</span><span class="stat-value mono" id="riskSkew">—</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="fas fa-shield-halved"></i> Drawdown</div>
+        <div class="stat"><span class="stat-label">Session DD</span><span class="stat-value" id="riskDrawdown">—</span></div>
+        <div class="stat"><span class="stat-label">Day DD</span><span class="stat-value" id="riskDayDd">—</span></div>
+        <div class="stat"><span class="stat-label">Week DD</span><span class="stat-value" id="riskWeekDd">—</span></div>
+        <div class="stat"><span class="stat-label">Exposure</span><span class="stat-value" id="riskExposure">—</span></div>
+        <div class="stat"><span class="stat-label">Hard limit guard</span><span class="stat-value" id="riskGuard">—</span></div>
+        <div class="stat"><span class="stat-label">Risk state</span><span class="stat-value" id="riskState">—</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="fas fa-stopwatch"></i> Execution Quality</div>
+        <div class="stat"><span class="stat-label">Total fills</span><span class="stat-value" id="execFills">—</span></div>
+        <div class="stat"><span class="stat-label">Positive sells</span><span class="stat-value positive" id="execPositive">—</span></div>
+        <div class="stat"><span class="stat-label">Negative sells</span><span class="stat-value negative" id="execNegative">—</span></div>
+        <div class="stat"><span class="stat-label">Avg P&L/sell</span><span class="stat-value" id="execAvgPnl">—</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="fas fa-clock"></i> Lifecycle Metrics</div>
+        <div class="stat"><span class="stat-label">p50/p95/p99</span><span class="stat-value mono" id="execPercentiles">—</span></div>
+        <div class="stat"><span class="stat-label">Post→Ack avg</span><span class="stat-value" id="execPostAck">—</span></div>
+        <div class="stat"><span class="stat-label">Ack→Fill avg</span><span class="stat-value" id="execAckFill">—</span></div>
+        <div class="stat"><span class="stat-label">Lifetime avg</span><span class="stat-value" id="execLifetime">—</span></div>
+        <div id="execHistogram" class="scroll-box" style="max-height:100px;margin-top:8px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><i class="fas fa-timeline"></i> Lifecycle Events</div>
+      <div id="lifecycleList" class="scroll-box"></div>
+    </div>
+  </div><!-- /tab-risk -->
+
+  <!-- ══════════════ TAB: AUTOMATION ══════════════ -->
+  <div id="tab-automation" class="tab-panel">
     <div class="grid row-2-even">
       <div class="card">
-        <h2><i class="fas fa-bolt"></i> Rules</h2>
-        <div id="automationRules" class="scroll-box"></div>
+        <div class="card-title"><i class="fas fa-list-check"></i> Active Rules</div>
+        <div id="automationRules" class="scroll-box" style="max-height:280px;margin-bottom:16px"></div>
+        <div class="separator"></div>
+        <div class="card-title" style="margin-top:10px"><i class="fas fa-plus"></i> Quick Add</div>
+        <input id="ruleName" class="input" placeholder="Rule name" />
+        <input id="ruleCondition" class="input" placeholder="Condition: spread_pct > 0.6" />
+        <input id="ruleAction" class="input" placeholder="Action: pause_quotes" />
+        <button class="btn" onclick="addAutomationRule()"><i class="fas fa-plus"></i> Add</button>
       </div>
       <div class="card">
-        <h2><i class="fas fa-plus"></i> Add rule</h2>
-        <input id="ruleName" class="input" placeholder="Nazwa" />
-        <input id="ruleCondition" class="input" placeholder="Warunek (np. spread_pct > 0.7)" />
-        <input id="ruleAction" class="input" placeholder="Akcja (np. pause_quotes)" />
-        <h2 style="margin-top:10px"><i class="fas fa-sitemap"></i> IF / THEN builder</h2>
-        <select id="ifType"><option value="spread">spread</option><option value="volatility">volatility</option><option value="skew">skew</option><option value="pnl_threshold">pnl_threshold</option><option value="time_window">time_window</option></select>
-        <select id="ifOperator"><option value=">">&gt;</option><option value="<">&lt;</option><option value=">=">&gt;=</option><option value="<=">&lt;=</option><option value="==">==</option></select>
-        <input id="ifValue" class="input" placeholder="value" />
-        <select id="thenAction"><option value="pause_bot">pause bot</option><option value="reduce_size">reduce size</option><option value="cancel_all">cancel all</option><option value="hedge_order">hedge order</option><option value="notify">notify</option></select>
-        <input id="ruleWindow" class="input" placeholder="time window (np. 07:00-22:00)" />
-        <button class="btn" onclick="addAutomationRule()">Dodaj</button>
-        <button class="btn" onclick="addBuilderRule()">Add IF/THEN</button>
+        <div class="card-title"><i class="fas fa-code-branch"></i> IF / THEN Builder</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <select id="ifType">
+            <option value="spread_pct">Spread %</option>
+            <option value="inventory_ratio">Inventory ratio</option>
+            <option value="session_pnl_usdt">Session PnL</option>
+            <option value="daily_pnl_usdt">Daily PnL</option>
+          </select>
+          <select id="ifOperator">
+            <option value=">">&gt;</option><option value="<">&lt;</option>
+            <option value=">=">&gt;=</option><option value="<=">&lt;=</option>
+          </select>
+        </div>
+        <input id="ifValue" class="input" type="number" step="any" placeholder="Value" />
+        <select id="thenAction">
+          <option value="pause_quotes">pause_quotes</option>
+          <option value="reduce_size_50pct">reduce_size_50pct</option>
+          <option value="stop_bot">stop_bot</option>
+          <option value="alert_only">alert_only</option>
+        </select>
+        <select id="ruleWindow" style="margin-top:8px">
+          <option value="always">Always</option>
+          <option value="market_hours">Market hours</option>
+          <option value="off_hours">Off hours</option>
+        </select>
+        <button class="btn" style="margin-top:10px" onclick="addBuilderRule()">
+          <i class="fas fa-code-branch"></i> Add IF/THEN
+        </button>
       </div>
     </div>
-  </section>
+  </div><!-- /tab-automation -->
 
-  <section id="tab-execution" class="tab-panel">
+  <!-- ══════════════ TAB: ANALYTICS ══════════════ -->
+  <div id="tab-analytics" class="tab-panel">
     <div class="grid row-2-even">
       <div class="card">
-        <h2><i class="fas fa-tachometer-alt"></i> Execution Quality</h2>
-        <div class="stat"><span class="stat-label">Fills total</span><span id="execFills" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Positive sells</span><span id="execPositive" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Negative sells</span><span id="execNegative" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">Avg realized pnl</span><span id="execAvgPnl" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">p50/p95/p99</span><span id="execPercentiles" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">post→ack</span><span id="execPostAck" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">ack→first fill</span><span id="execAckFill" class="stat-value">-</span></div>
-        <div class="stat"><span class="stat-label">lifetime</span><span id="execLifetime" class="stat-value">-</span></div>
-        <div id="execHistogram" class="scroll-box"></div>
+        <div class="card-title"><i class="fas fa-scroll"></i> Strategy Journal</div>
+        <div id="journalList" class="scroll-box"></div>
       </div>
       <div class="card">
-        <h2><i class="fas fa-project-diagram"></i> Order Lifecycle</h2>
-        <div id="lifecycleList" class="scroll-box"></div>
+        <div class="card-title"><i class="fas fa-brain"></i> Reason Trace</div>
+        <div id="reasonTraceList" class="scroll-box"></div>
       </div>
     </div>
-  </section>
+  </div><!-- /tab-analytics -->
 
-  <section id="tab-backtest" class="tab-panel">
-    <div class="card">
-      <h2><i class="fas fa-vial"></i> Backtest & Replay Summary</h2>
-      <input id="btDatasetInput" class="input" placeholder="dataset name" />
-      <input id="btCandlesInput" class="input" type="number" placeholder="candles" />
-      <div style="display:flex;gap:8px;"><button class="btn" onclick="importBacktestData()">Import data</button><button class="btn" onclick="compareConfigs()">Compare A/B</button></div>
-      <div id="btCompare" class="small-muted" style="margin:8px 0;"></div>
-      <div class="stat"><span class="stat-label">Dataset</span><span id="btDataset" class="stat-value">-</span></div>
-      <div class="stat"><span class="stat-label">Simulated trades</span><span id="btTrades" class="stat-value">-</span></div>
-      <div class="stat"><span class="stat-label">Net PnL</span><span id="btPnl" class="stat-value">-</span></div>
-      <div class="stat"><span class="stat-label">Profit factor</span><span id="btPf" class="stat-value">-</span></div>
-      <div class="stat"><span class="stat-label">Max drawdown</span><span id="btDd" class="stat-value">-</span></div>
-      <div class="stat"><span class="stat-label">Replay ready</span><span id="btReady" class="stat-value">-</span></div>
-    </div>
-  </section>
-
-  <section id="tab-journal" class="tab-panel">
-    <div class="card">
-      <h2><i class="fas fa-book"></i> Strategy Journal (AI/Strategy Trace)</h2>
-      <div id="journalList" class="scroll-box"></div>
-      <h2 style="margin-top:10px"><i class="fas fa-search"></i> Reason Trace</h2>
-      <div id="reasonTraceList" class="scroll-box"></div>
-    </div>
-  </section>
-
-  <div id="detailsModal" class="details-modal">
-    <div class="modal-card">
-      <h2 id="modalTitle">Details</h2>
-      <div id="modalBody"></div>
-      <div class="modal-actions">
-        <button class="btn" onclick="closeModal()">Close</button>
-        <button id="modalActionBtn" class="btn danger" style="display:none;">Akcja</button>
+  <!-- ══════════════ TAB: BACKTEST ══════════════ -->
+  <div id="tab-backtest" class="tab-panel">
+    <div class="grid row-2-even">
+      <div class="card">
+        <div class="card-title"><i class="fas fa-database"></i> Dataset</div>
+        <input id="btDatasetInput" class="input" placeholder="Dataset name" value="manual_dataset" />
+        <input id="btCandlesInput" class="input" type="number" placeholder="Candles (0=all)" value="0" />
+        <div class="btn-row">
+          <button class="btn" onclick="importBacktestData()"><i class="fas fa-upload"></i> Import</button>
+          <button class="btn" onclick="compareConfigs()"><i class="fas fa-scale-balanced"></i> A/B Compare</button>
+        </div>
+        <div id="btCompare" class="small-muted" style="margin-top:10px;font-family:var(--mono)"></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="fas fa-chart-bar"></i> Results</div>
+        <div class="stat"><span class="stat-label">Dataset</span><span class="stat-value" id="btDataset">—</span></div>
+        <div class="stat"><span class="stat-label">Trades</span><span class="stat-value" id="btTrades">—</span></div>
+        <div class="stat"><span class="stat-label">Net PnL</span><span class="stat-value" id="btPnl">—</span></div>
+        <div class="stat"><span class="stat-label">Profit factor</span><span class="stat-value" id="btPf">—</span></div>
+        <div class="stat"><span class="stat-label">Max drawdown</span><span class="stat-value negative" id="btDd">—</span></div>
+        <div class="stat"><span class="stat-label">Replay ready</span><span class="stat-value" id="btReady">—</span></div>
       </div>
     </div>
+  </div><!-- /tab-backtest -->
+
+</div><!-- /app-wrapper -->
+
+<!-- Modal -->
+<div id="modalOverlay" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
   </div>
-  <div id="toast" class="toast"></div>
+</div>
 
-  <script>
-    let chart = null, intradayChart = null, countdown = 5, lastConn = false;
-    let refreshIntervalMs = 5000, refreshTimer = null;
-    let lastUpdateIssues = 0;
-    let isUpdating = false, pendingUpdate = false;
-    let portfolioHistHash = null, intradayHash = null;
-    let pnlFilter = "today";
-    let currentOrders = [], currentTrades = [];
+<!-- Toast -->
+<div id="toast" class="toast"></div>
 
-    function fmt(n, d=2){ if(n===null||n===undefined||isNaN(n)) return '-'; return Number(n).toLocaleString('pl-PL',{minimumFractionDigits:d, maximumFractionDigits:d}); }
-    function fmtInt(n){ if(n===null||n===undefined||isNaN(n)) return '-'; return Number(n).toLocaleString('pl-PL'); }
-    function price(n){ if(n===null||n===undefined||isNaN(n)) return '-'; return Number(n).toFixed(8); }
+<!-- Scripts -->
+<script src="/static/js/fx.js"></script>
+<script src="/static/js/app.js"></script>
 
-    document.querySelectorAll('.tab-btn').forEach(btn=>btn.addEventListener('click', ()=>setTab(btn.dataset.tab)));
-    function setTab(name){
-      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
-      document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id===`tab-${name}`));
-    }
-
-    function updateCountdown(){ const step = Math.max(1, Math.floor(refreshIntervalMs / 1000)); countdown = (countdown - 1 + step + 1) % (step + 1); document.getElementById('countdown').textContent = countdown + 's'; }
-    function updateStatus(on){
-      const i=document.getElementById('statusIndicator'), t=document.getElementById('statusText');
-      if(on!==lastConn){ lastConn=on; i.className='status-indicator'+(on?' live':''); }
-      t.textContent = on ? (lastUpdateIssues ? `LIVE (${lastUpdateIssues} warning)` : 'LIVE') : 'OFFLINE';
-    }
-
-    async function api(url, options={}){
-      try {
-        const r = await fetch(url, options);
-        if(!r.ok) throw new Error(r.status);
-        return await r.json();
-      } catch(e){
-        console.error(`API error ${url}:`, e);
-        return null;
-      }
-    }
-
-    async function safeApi(url, options={}){
-      const data = await api(url, options);
-      return { ok: data !== null, data };
-    }
-
-    function resetRefreshTimer(){
-      if(refreshTimer) clearInterval(refreshTimer);
-      refreshTimer = setInterval(() => { if (!document.hidden) update(); }, refreshIntervalMs);
-    }
-
-    function setRefreshInterval(ms){
-      refreshIntervalMs = Number(ms) || 5000;
-      countdown = Math.max(1, Math.floor(refreshIntervalMs / 1000));
-      document.getElementById('countdown').textContent = countdown + 's';
-      resetRefreshTimer();
-    }
-
-    function toast(message){
-      const el = document.getElementById('toast');
-      el.textContent = message;
-      el.classList.add('show');
-      clearTimeout(window.__toastTimer);
-      window.__toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
-    }
-
-    function normalizeTime(ts){
-      const d = ts ? new Date(ts) : null;
-      return d && !isNaN(d.getTime()) ? d.toLocaleTimeString() : '-';
-    }
-
-    function normalizeRows(payload, keyCandidates=[]){
-      if (Array.isArray(payload)) return payload;
-      if (!payload || typeof payload !== 'object') return [];
-      for (const key of keyCandidates){
-        const v = payload[key];
-        if (Array.isArray(v)) return v;
-      }
-      return [];
-    }
-
-    function normalizeHistory(payload){
-      return normalizeRows(payload, ['history', 'data', 'items', 'rows']);
-    }
-
-    function normalizeFills(payload){
-      return normalizeRows(payload, ['fills', 'trades', 'data', 'items', 'rows']);
-    }
-
-
-    function setQuickQty(percent){
-      const usdtTxt = (document.getElementById('usdtBalance')?.textContent||'0').replace(/\s/g,'').replace(',','.');
-      const usdt = Number(usdtTxt) || 0;
-      const pTxt = (document.getElementById('price')?.textContent||'0').replace(',','.');
-      const px = Number(pTxt) || 0.0000375;
-      const qty = (usdt * (percent/100)) / px;
-      document.getElementById('manualQty').value = Number.isFinite(qty) ? qty.toFixed(2) : '';
-      preflightManualOrder();
-    }
-
-    function setPnlFilter(windowKey){ pnlFilter = windowKey; update(); }
-
-    async function preflightManualOrder(){
-      const payload = {
-        side: document.getElementById('manualSide').value,
-        type: document.getElementById('manualType').value,
-        quantity: Number(document.getElementById('manualQty').value),
-        price: Number(document.getElementById('manualPrice').value),
-        reduce_only: document.getElementById('manualReduceOnly').checked
-      };
-      const pre = await api('/api/orders/preflight', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      const t = pre ? `minQty ${pre.min_qty} | minNotional ${pre.min_notional_usdt} | estNotional ${fmt(pre.estimated_notional_usdt,4)} | fee ${fmt(pre.estimated_fee_usdt,6)} ${pre.confirm_required ? '| confirm required' : ''} ${(pre.errors||[]).join(' ')}` : 'Preflight failed';
-      document.getElementById('manualValidation').textContent = t;
-      return pre;
-    }
-
-    async function submitManualOrder(){
-      const payload = {
-        side: document.getElementById('manualSide').value,
-        type: document.getElementById('manualType').value,
-        quantity: Number(document.getElementById('manualQty').value),
-        price: Number(document.getElementById('manualPrice').value),
-        reduce_only: document.getElementById('manualReduceOnly').checked
-      };
-      const pre = await preflightManualOrder();
-      if(pre?.confirm_required && !document.getElementById('manualConfirmMode').checked){
-        toast('Duże zlecenie: włącz confirm mode');
-        document.getElementById('manualOrderResult').textContent = 'Large order blocked: enable confirm mode.';
-        return;
-      }
-      if(pre?.confirm_required){ payload.confirm_token = pre.confirm_token; }
-      const res = await api('/api/orders/manual', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      document.getElementById('manualOrderResult').textContent = res ? JSON.stringify(res).slice(0,180) : 'Order submission error';
-      toast(res?.ok ? 'Zlecenie wysłane' : 'Błąd wysyłki zlecenia');
-      update();
-    }
-
-    async function cancelAllOrders(){
-      const res = await api('/api/orders/cancel-all', {method:'POST'});
-      document.getElementById('manualOrderResult').textContent = res ? JSON.stringify(res).slice(0,180) : 'Cancel-all error';
-      toast(res?.ok ? 'Anulowano wszystkie zlecenia' : 'Nie udało się anulować zleceń');
-      update();
-    }
-
-
-    async function syncTradesFromExchange(){
-      const res = await api('/api/trades/sync-from-exchange', {method:'POST'});
-      const ok = res && res.status === 'success';
-      const msg = ok ? `Zsynchronizowano: ${res.added||0} nowych tradeów` : (res?.message || 'Błąd synchronizacji tradeów');
-      document.getElementById('manualOrderResult').textContent = msg;
-      toast(msg);
-      update();
-    }
-
-    async function addAutomationRule(){
-      const payload = {
-        name: document.getElementById('ruleName').value,
-        condition: document.getElementById('ruleCondition').value,
-        action: document.getElementById('ruleAction').value,
-      };
-      await api('/api/automation-rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      document.getElementById('ruleName').value=''; document.getElementById('ruleCondition').value=''; document.getElementById('ruleAction').value='';
-      toast('Dodano regułę automatyzacji');
-      update();
-    }
-
-
-    async function addBuilderRule(){
-      const payload = {
-        name: document.getElementById('ruleName').value || 'Builder Rule',
-        if: {
-          type: document.getElementById('ifType').value,
-          operator: document.getElementById('ifOperator').value,
-          value: document.getElementById('ifValue').value
-        },
-        then: { action: document.getElementById('thenAction').value },
-        time_window: document.getElementById('ruleWindow').value || 'always'
-      };
-      const res = await api('/api/automation-rules/builder', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      toast(res?.ok ? 'Dodano regułę IF/THEN' : 'Błąd reguły IF/THEN');
-      update();
-    }
-
-    async function importBacktestData(){
-      const payload = {dataset: document.getElementById('btDatasetInput').value || 'manual_dataset', candles: Number(document.getElementById('btCandlesInput').value || 0)};
-      const res = await api('/api/backtest/import', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      document.getElementById('btCompare').textContent = res ? `Import: ${res.dataset}, candles=${res.candles}` : 'Import failed';
-    }
-
-    async function compareConfigs(){
-      const res = await api('/api/backtest/compare');
-      if(!res) return;
-      document.getElementById('btCompare').textContent = `A PF ${res.config_a.profit_factor}, B PF ${res.config_b.profit_factor}, better: ${res.better}`;
-    }
-
-    function syncManualOrderType(){
-      const orderType = document.getElementById('manualType').value;
-      const priceInput = document.getElementById('manualPrice');
-      const enabled = orderType === 'LIMIT';
-      priceInput.disabled = !enabled;
-      if(!enabled) priceInput.value = '';
-      priceInput.placeholder = enabled ? 'Limit price' : 'Price disabled for market order';
-      priceInput.style.opacity = enabled ? '1' : '.55';
-    }
-
-
-    function stableHash(values){
-      try { return JSON.stringify(values); } catch (_) { return String(values?.length || 0); }
-    }
-
-    const chartOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      normalized: true,
-      parsing: false,
-      plugins: {
-        legend: { display: false },
-        decimation: { enabled: true, algorithm: 'lttb', samples: 120 }
-      },
-      scales: { x: { ticks: { color: '#666', maxTicksLimit: 8 } }, y: { ticks: { color: '#666', maxTicksLimit: 8 } } }
-    };
-
-    function upsertLineChart(chartRef, canvasId, labels, data, borderColor, fillColor){
-      const canvas = document.getElementById(canvasId);
-      if(!canvas) return chartRef;
-      if(typeof window.Chart === 'undefined'){
-        return chartRef;
-      }
-      if(!chartRef){
-        return new Chart(canvas, {
-          type:'line',
-          data:{ labels, datasets:[{ data, borderColor, backgroundColor:fillColor, fill:Boolean(fillColor), pointRadius:0, tension:.35 }]},
-          options: chartOptions
-        });
-      }
-      chartRef.data.labels = labels;
-      chartRef.data.datasets[0].data = data;
-      chartRef.update('none');
-      return chartRef;
-    }
-
-    function closeModal(){ document.getElementById('detailsModal').classList.remove('open'); document.getElementById('modalActionBtn').style.display='none'; }
-    function openModal(title, bodyHtml){ document.getElementById('modalTitle').innerHTML=title; document.getElementById('modalBody').innerHTML=bodyHtml; document.getElementById('detailsModal').classList.add('open'); }
-
-    function showOrderDetails(idx){
-      const o = currentOrders[idx]; if(!o) return;
-      openModal('Order details', `<div class='stat'><span class='stat-label'>ID</span><span class='stat-value'>${o.id||'-'}</span></div><div class='stat'><span class='stat-label'>Side</span><span class='stat-value'>${o.side||'-'}</span></div><div class='stat'><span class='stat-label'>Qty</span><span class='stat-value'>${fmtInt(o.quantity)}</span></div><div class='stat'><span class='stat-label'>Price</span><span class='stat-value'>${price(o.price)}</span></div>`);
-      const btn=document.getElementById('modalActionBtn'); btn.style.display='inline-block'; btn.textContent='Cancel order';
-      btn.onclick = async()=>{ await api('/api/open-orders/'+encodeURIComponent(o.id)+'/cancel', {method:'POST'}); closeModal(); update(); };
-    }
-
-    function showTradeDetails(idx){
-      const t = currentTrades[idx]; if(!t) return;
-      const pnlVal = t.calculated_pnl!==null&&t.calculated_pnl!==undefined ? t.calculated_pnl : (t.pnl||null);
-      openModal('Trade details', `<div class='stat'><span class='stat-label'>Trade ID</span><span class='stat-value'>${t.id||'-'}</span></div><div class='stat'><span class='stat-label'>Side</span><span class='stat-value'>${t.side||'-'}</span></div><div class='stat'><span class='stat-label'>Qty</span><span class='stat-value'>${fmtInt(t.quantity)}</span></div><div class='stat'><span class='stat-label'>P&L</span><span class='stat-value'>${pnlVal!==null?fmt(pnlVal,4):'-'}</span></div>`);
-      const btn = document.getElementById('modalActionBtn');
-      const canClose = String(t.side || '').toUpperCase() === 'BUY';
-      if (!canClose){
-        btn.style.display = 'none';
-        btn.onclick = null;
-        return;
-      }
-      btn.style.display='inline-block';
-      btn.textContent='Close BUY position';
-      btn.onclick = async()=>{ await api('/api/trades/'+encodeURIComponent(t.id)+'/close', {method:'POST'}); closeModal(); update(); };
-    }
-
-    async function update(force = false){
-      if (isUpdating){ pendingUpdate = true; return; }
-      isUpdating = true;
-      try {
-        const [pR, pfR, pnlR, pnlSaldoR, wrR, fillsR, histR, ordersR, errorsR, botR, profitabilityR, execqR, orderbookR, riskR, lifecycleR, rulesR, backtestR, journalR, livePnlR, lifeMetricsR, reasonTraceR] = await Promise.all([
-          safeApi('/api/price'), safeApi('/api/portfolio'), safeApi('/api/pnl'), safeApi('/api/pnl-saldo'), safeApi('/api/win-rate'), safeApi('/api/fills'),
-          safeApi('/api/history'), safeApi('/api/open-orders'), safeApi('/api/errors'), safeApi('/api/bot-status'), safeApi('/api/profitability'), safeApi('/api/execution-quality'),
-          safeApi('/api/orderbook'), safeApi('/api/risk-cockpit'), safeApi('/api/order-lifecycle'), safeApi('/api/automation-rules'), safeApi('/api/backtest-replay-summary'), safeApi('/api/strategy-journal'), safeApi(`/api/live-pnl?window=${encodeURIComponent(pnlFilter)}&symbol=${encodeURIComponent(document.getElementById('pnlSymbol')?.value||'MEWC_USDT')}&strategy=${encodeURIComponent(document.getElementById('pnlStrategy')?.value||'default')}`), safeApi('/api/order-lifecycle-metrics'), safeApi('/api/strategy-reason-trace?limit=30')
-        ]);
-        const p = pR.data, pf = pfR.data, pnl = pnlR.data, pnlSaldo = pnlSaldoR.data, wr = wrR.data, fills = fillsR.data, hist = histR.data,
-          orders = ordersR.data, errors = errorsR.data, bot = botR.data, profitability = profitabilityR.data, execq = execqR.data,
-          orderbook = orderbookR.data, risk = riskR.data, lifecycle = lifecycleR.data, rules = rulesR.data, backtest = backtestR.data,
-          journal = journalR.data, livePnl = livePnlR.data, lifeMetrics = lifeMetricsR.data, reasonTrace = reasonTraceR.data;
-        lastUpdateIssues = [pR,pfR,pnlR,pnlSaldoR,wrR,fillsR,histR,ordersR,errorsR,botR,profitabilityR,execqR,orderbookR,riskR,lifecycleR,rulesR,backtestR,journalR,livePnlR,lifeMetricsR,reasonTraceR].filter(x=>!x.ok).length;
-
-        if (p){ document.getElementById('price').textContent = price(p.last_price); document.getElementById('bid').textContent=price(p.bid); document.getElementById('ask').textContent=price(p.ask); document.getElementById('volume').textContent=fmt(p.usd_volume_est,0)+' USDT'; const cv=parseFloat(p.change_percent)||0; const ch=document.getElementById('priceChange'); ch.textContent=(cv>=0?'+':'')+p.change_percent+'%'; ch.className=cv>=0?'positive':'negative'; }
-        if (pf){ document.getElementById('mewcBalance').textContent=fmtInt(pf.mewc_balance); document.getElementById('mewcValue').textContent=fmt(pf.mewc_value_usdt,2)+' USDT'; document.getElementById('usdtBalance').textContent=fmt(pf.usdt_balance,2); document.getElementById('usdtValue').textContent=fmt(pf.usdt_balance,2)+' USDT'; const total = Number.isFinite(Number(pf.total_value_usdt)) ? pf.total_value_usdt : ((pf.mewc_value_usdt||0)+(pf.usdt_balance||0)); document.getElementById('totalValue').textContent=fmt(total,2)+' USDT'; }
-        if (pnlSaldo){ const v=pnlSaldo.pnl||0; const el=document.getElementById('portfolioPnL'); el.textContent=(v>=0?'+':'')+fmt(v,2)+' USDT'; el.className='stat-value '+(v>=0?'positive':'negative'); }
-        if (wr){ document.getElementById('winRate').textContent=wr.win_rate+'%'; document.getElementById('totalTrades').textContent=wr.total; }
-        if (pnl){ ['daily','weekly','monthly'].forEach(period=>{ const d=pnl[period]||{}; const val=d.net||0; const el=document.getElementById('pnl'+period.charAt(0).toUpperCase()+period.slice(1)); if(el) el.textContent=(val>=0?'+':'')+fmt(val,2)+' USDT'; const tEl=document.getElementById('trades'+period.charAt(0).toUpperCase()+period.slice(1)); if(tEl) tEl.textContent=d.trades||0; }); }
-
-        currentOrders = Array.isArray(orders)?orders:[];
-        document.getElementById('ordersList').innerHTML = currentOrders.length ? currentOrders.map((o,idx)=>`<div class='order-item ${(o.side||'').toLowerCase()}' onclick='showOrderDetails(${idx})'><strong>${(o.side||'').toUpperCase()}</strong><span>${fmtInt(o.remaining||o.quantity)} MEWC</span><span style='color:#ff9500'>${price(o.price)} USDT</span></div>`).join('') : '<span style="color:#777">No open orders</span>';
-
-        currentTrades = normalizeFills(fills);
-        document.getElementById('tradesTable').innerHTML = currentTrades.length ? currentTrades.map((t,idx)=>{ const pnlVal=t.calculated_pnl!==null&&t.calculated_pnl!==undefined?t.calculated_pnl:(t.pnl||null); const pnlCls=pnlVal!==null?(pnlVal>=0?'positive':'negative'):''; return `<tr class='trade-row' onclick='showTradeDetails(${idx})'><td>${normalizeTime(t.timestamp)}</td><td class='${(t.side||'').toLowerCase()}'>${(t.side||'').toUpperCase()}</td><td>${fmtInt(t.quantity)}</td><td>${price(t.price)}</td><td class='${pnlCls}'>${pnlVal!==null?fmt(pnlVal,4):'-'}</td></tr>`; }).join('') : '<tr><td colspan="5" style="color:#777">No trades</td></tr>';
-
-        document.getElementById('errorsList').innerHTML = errors && errors.length ? errors.slice(0,8).map(e=>`<div class='stat'><span class='stat-label'>•</span><span class='stat-value'>${e}</span></div>`).join('') : '<span style="color:#34c759">No errors</span>';
-
-        if (orderbook){ const my = new Set(currentOrders.map(o=>Number(o.price).toFixed(8))); const asks=(orderbook.asks||[]).slice(0,10).reverse(); const bids=(orderbook.bids||[]).slice(0,10); const rows=asks.map(a=>({...a,side:'ask'})).concat(bids.map(b=>({...b,side:'bid'}))); document.getElementById('orderbookLadder').innerHTML = rows.map(r=>`<div class='ladder-row ${r.side} ${my.has(Number(r.price).toFixed(8))?'mine':''}'><span>${price(r.price)}</span><span>${fmtInt(r.quantity)} MEWC</span></div>`).join(''); }
-
-        const histRows = normalizeHistory(hist); if (histRows.length){ const labels = histRows.map(h=>new Date(h.timestamp).toLocaleString()); const values = histRows.map(h=>Number(h.total_value_usdt)||0); const nextHash = stableHash([labels, values]); if (force || !chart || nextHash !== portfolioHistHash){ const nextChart = upsertLineChart(chart, 'portfolioChart', labels, values, '#ff9500', 'rgba(255,149,0,.1)'); if (nextChart){ chart = nextChart; portfolioHistHash = nextHash; } } }
-
-        if (profitability){ document.getElementById('livePf').textContent=profitability.profit_factor; }
-        if (livePnl){ document.getElementById('liveUnrealized').textContent=(livePnl.unrealized_usdt>=0?'+':'')+fmt(livePnl.unrealized_usdt,4)+' USDT'; document.getElementById('liveRealized').textContent=(livePnl.realized_usdt>=0?'+':'')+fmt(livePnl.realized_usdt,4)+' USDT'; document.getElementById('liveFees').textContent=fmt(livePnl.fees_usdt,4)+' USDT'; document.getElementById('liveNetProfit').textContent=(livePnl.net_usdt>=0?'+':'')+fmt(livePnl.net_usdt,4)+' USDT'; if(livePnl.equity_curve && livePnl.equity_curve.length){ const labels = livePnl.equity_curve.map(x=>normalizeTime(x.timestamp)); const values = livePnl.equity_curve.map(x=>Number(x.equity)||0); const nextHash = stableHash([labels, values]); if (force || !intradayChart || nextHash !== intradayHash){ const nextIntraday = upsertLineChart(intradayChart, 'intradayCurve', labels, values, '#8f7dff'); if (nextIntraday){ intradayChart = nextIntraday; intradayHash = nextHash; } } } }
-        if (risk){ document.getElementById('riskInventory').textContent=fmt(risk.inventory_ratio*100,2)+'%'; document.getElementById('riskTarget').textContent=fmt(risk.target_ratio*100,2)+'%'; document.getElementById('riskSkew').textContent=fmt(risk.current_skew,4); document.getElementById('riskDrawdown').textContent=fmt(risk.session_drawdown_pct ?? risk.drawdown_pct,2)+'%'; document.getElementById('riskDayDd').textContent=fmt(risk.day_drawdown_pct,2)+'%'; document.getElementById('riskWeekDd').textContent=fmt(risk.week_drawdown_pct,2)+'%'; document.getElementById('riskExposure').textContent=fmt(risk.inventory_exposure_pct ?? risk.inventory_ratio*100,2)+'%'; document.getElementById('riskGuard').textContent=risk.hard_limit_guard ? 'ON' : 'OFF'; document.getElementById('riskState').textContent=risk.risk_state||'-'; }
-        if (execq){ document.getElementById('execFills').textContent=execq.fills_total; document.getElementById('execPositive').textContent=execq.positive_sell_fills; document.getElementById('execNegative').textContent=execq.negative_sell_fills; document.getElementById('execAvgPnl').textContent=fmt(execq.avg_realized_pnl_per_sell_usdt,6)+' USDT'; }
-        if (lifeMetrics){ document.getElementById('execPercentiles').textContent=`${fmt(lifeMetrics.p50_sec,3)}/${fmt(lifeMetrics.p95_sec,3)}/${fmt(lifeMetrics.p99_sec,3)}s`; document.getElementById('execPostAck').textContent=fmt(lifeMetrics.post_to_ack_avg_sec,3)+'s'; document.getElementById('execAckFill').textContent=fmt(lifeMetrics.ack_to_first_fill_avg_sec,3)+'s'; document.getElementById('execLifetime').textContent=fmt(lifeMetrics.total_lifetime_avg_sec,3)+'s'; document.getElementById('execHistogram').innerHTML = (lifeMetrics.histogram||[]).map(h=>`<div class='stat'><span class='stat-label'>${h.bucket}</span><span class='stat-value'>${h.count}</span></div>`).join(''); }
-
-        document.getElementById('lifecycleList').innerHTML = lifecycle && lifecycle.length ? lifecycle.slice(0,50).map(i=>`<div class='stat'><span class='stat-label'>${i.event||'-'}</span><span class='stat-value'>${i.order_id||'-'} @ ${i.price||'-'}</span></div>`).join('') : '<span style="color:#777">No lifecycle events</span>';
-        document.getElementById('automationRules').innerHTML = rules && rules.length ? rules.map(r=>`<div class='stat'><span class='stat-label'>${r.name}</span><span class='stat-value'>${r.condition} → ${r.action}</span></div>`).join('') : '<span style="color:#777">No rules</span>';
-
-        if (backtest){ document.getElementById('btDataset').textContent=backtest.dataset; document.getElementById('btTrades').textContent=backtest.simulated_trades; document.getElementById('btPnl').textContent=fmt(backtest.net_pnl_usdt,4)+' USDT'; document.getElementById('btPf').textContent=backtest.profit_factor; document.getElementById('btDd').textContent=fmt(backtest.max_drawdown_pct,2)+'%'; document.getElementById('btReady').textContent=backtest.replay_ready?'yes':'no'; }
-        document.getElementById('journalList').innerHTML = journal && journal.length ? journal.map(j=>`<div class='stat'><span class='stat-label'>${j.timestamp||''}</span><span class='stat-value'>${j.message||''}</span></div>`).join('') : '<span style="color:#777">No journal entries</span>';
-        document.getElementById('reasonTraceList').innerHTML = reasonTrace && reasonTrace.length ? reasonTrace.map(r=>`<div class='stat'><span class='stat-label'>${r.signal} / ${r.risk_decision}</span><span class='stat-value'>${r.final_action}</span></div>`).join('') : '<span style="color:#777">No reason trace</span>';
-
-        if (bot){
-          const cycle = bot.last_cycle || "-";
-          document.getElementById('botCycle').textContent = cycle;
-          const summary = `mid ${price(bot.last_mid_price)} | skew ${fmt(bot.last_skew,4)} | bids ${bot.active_bids||0} / asks ${bot.active_asks||0}`;
-          document.getElementById('botSummary').textContent = summary;
-        }
-        document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
-        updateStatus(true); countdown = Math.max(1, Math.floor(refreshIntervalMs / 1000));
-      } catch(e){ console.error('Update error:', e); updateStatus(false); }
-      finally {
-        isUpdating = false;
-        if (pendingUpdate){ pendingUpdate = false; queueMicrotask(()=>update(force)); }
-      }
-    }
-
-    update();
-    syncManualOrderType();
-    document.getElementById('manualType').addEventListener('change', syncManualOrderType);
-    ['manualQty','manualPrice','manualSide','manualType','manualReduceOnly'].forEach(id=>document.getElementById(id).addEventListener('change', preflightManualOrder));
-    document.getElementById('refreshSelect').addEventListener('change', (e)=>setRefreshInterval(e.target.value));
-    setRefreshInterval(document.getElementById('refreshSelect').value);
-    setInterval(updateCountdown, 1000);
-    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) update(true); });
-  </script>
 </body>
 </html>

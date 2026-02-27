@@ -73,6 +73,15 @@ class RiskManager:
         self.position.usdt_held = usdt_held
         self.position.last_mid_price = mid_price
 
+        # Zainicjuj initial balances przy pierwszym wywołaniu
+        if self.position.initial_mewc == 0.0 and self.position.initial_usdt == 0.0:
+            self.position.initial_mewc = mewc_available + mewc_held
+            self.position.initial_usdt = usdt_available + usdt_held
+            logger.info(
+                "Initial balances set — MEWC: %.2f  USDT: %.4f",
+                self.position.initial_mewc, self.position.initial_usdt,
+            )
+
         # Reset daily tracking at midnight-ish (every 24h)
         if time.time() - self.position.day_start_ts > 86400:
             logger.info("Daily P&L reset. Previous: %.4f USDT", self.position.daily_pnl_usdt)

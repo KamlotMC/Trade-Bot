@@ -1,38 +1,100 @@
 exchange:
   base_url: "https://api.nonkyc.io/api/v2"
   symbol: "MEWC/USDT"
-  fee_maker_pct: 0.002
+  fee_maker_pct: 0.002   # 0.2% opłata maker (używana do kalkulacji P&L)
   fee_taker_pct: 0.002
 
 strategy:
-  spread_pct: 0.010
-  min_spread_pct: 0.008
+  # ── Spread i poziomy ────────────────────────────────────────
+  # Spread brutto 1.0% - net po opłatach (2 * 0.2%) = 0.6% zysku per round-trip
+  # Dla MEWC z niskim wolumenem 1.0% to rozsądny punkt startowy.
+  spread_pct: 0.010         # 1.0% half-spread od mid-price
+
+  # Minimalna dopuszczalna szerokość spreadu (ochrona przed zbyt wąskim kwotowaniem)
+  min_spread_pct: 0.008     # 0.8% - poniżej tej granicy bot nie kwotuje
+
+  # Liczba warstw po każdej stronie (bid i ask)
+  # 2 warstwy * 2 strony = 4 zlecenia (max_open_orders musi >= num_levels * 2)
   num_levels: 2
-  level_step_pct: 0.005
-  base_quantity: 35000.0
-  quantity_multiplier: 1.0
-  refresh_interval_sec: 90
+
+  # Odległość między warstwami - L1 będzie o tyle dalej od mid niż L0
+  level_step_pct: 0.005     # 0.5% - L0: 1.0%, L1: 1.5% od mid
+
+  # Rozmiar zlecenia na warstwie L0
+  # 100,000 MEWC * 0.0000375 = ~3.75 USDT/zlecenie (sensowniejsze niż 1.3 USDT)
+  # BYŁO: 35,000 (zbyt małe - tylko 17% kapitału w grze)
+  base_quantity: 100000.0   # MEWC
+
+  # Mnożnik ilości dla kolejnych warstw: L1 = base * multiplier^1
+  # BYŁO: 1.0 (wszystkie warstwy równe - bezcelowe)
+  # TERAZ: 1.4 -> L0=100k, L1=140k MEWC (głębsza płynność dalej od mid)
+  quantity_multiplier: 1.40
+
+  # Czas między cyklami odświeżania zleceń
+  # BYŁO: 90s (za długo dla zmiennej krypto)
+  # TERAZ: 45s - częstsze repricing przy zachowaniu limitu API
+  refresh_interval_sec: 45
+
   order_type: "limit"
-  min_bid_price: 0.000008
-  adaptive_spread_enabled: true
+
+  # Floor cenowy dla zleceń kupna - ochrona przed crash 80%+ ceny
+  min_bid_price: 0.000008   # ~21% obecnej ceny - crash protection
+
+  # ── Funkcje zaawansowane (stub - wymagają implementacji) ────
+  # Flagi istnieją ale kod ich jeszcze nie realizuje
+  adaptive_spread_enabled: false   # BYŁO: true (flaga fałszywa - kod nie istnieje)
   volatility_lookback: 12
   trend_lookback: 8
   queue_reprice_threshold_pct: 0.002
-  imbalance_skew_enabled: true
+  imbalance_skew_enabled: false    # BYŁO: true (j.w.)
   session_schedule_enabled: false
 
 risk:
+  # ── Limity ekspozycji ───────────────────────────────────────
+  # Max MEWC zablokowane w zleceniach sprzedaży
   max_mewc_exposure: 1500000.0
-  max_usdt_exposure: 40.0
+
+  # Max USDT zablokowane w zleceniach kupna
+  # BYŁO: 40 (powyżej całego salda ~30 USDT - limit bezużyteczny!)
+  # TERAZ: 28 = ~93% typowego salda USDT - skuteczny limit
+  max_usdt_exposure: 28.0
+
+  # ── Inventory management ────────────────────────────────────
+  # Siła korekcji inventory przez skew kwotowania
   inventory_skew_factor: 1.10
+
+  # Docelowa proporcja MEWC w portfelu (wartościowo)
+  # 0.6 = 60% MEWC, 40% USDT
   inventory_target_ratio: 0.60
+
+  # Ile procent wolnego salda może być użyte do kwotowania
   max_balance_usage_pct: 0.90
-  stop_loss_usdt: -20.0
-  daily_loss_limit_usdt: -40.0
-  max_open_orders: 4
+
+  # ── Stop-loss i limity strat ────────────────────────────────
+  # Stop-loss na niezrealizowanej straty sesji (od startu bota)
+  # BYŁO: -20 USDT = 67% kapitału - za późno na reakcję!
+  # TERAZ: -6 USDT = ~20% kapitału - realistyczny emergency stop
+  stop_loss_usdt: -6.0
+
+  # Dzienny limit strat zrealizowanych
+  # BYŁO: -40 USDT (więcej niż cały kapitał - nigdy nie zadziała!)
+  # TERAZ: -12 USDT = ~40% kapitału dziennie
+  daily_loss_limit_usdt: -12.0
+
+  # ── Limity zleceń ───────────────────────────────────────────
+  # BYŁO: 4 = dokładnie tyle ile bot stawia (2*2) - zero marginesu!
+  # TERAZ: 8 - margines na orphaned orders po błędach sieci
+  max_open_orders: 8
+
+  # Minimum zysku netto po opłatach (0 = wyłączone)
   min_profit_after_fees_pct: 0.006
+
   max_slippage_pct: 0.02
+
+  # Kill-switch: ile strat z rzędu przed zatrzymaniem
   intraday_max_consecutive_losses: 4
+
+  # Pasmo inventory - poza tymi granicami bot agresywnie skewuje kwotowanie
   inventory_band_low: 0.40
   inventory_band_high: 0.70
 
@@ -44,10 +106,10 @@ logging:
   backup_count: 3
 
 volatility_adapter:
-  enabled: false
+  enabled: false   # Nie zaimplementowane
 
 circuit_breaker:
   enabled: true
-  crash_threshold_pct: 20.0
+  crash_threshold_pct: 20.0   # Pauza gdy cena spada >20% w ciągu 3 minut
   time_window_minutes: 3
-  pause_duration_sec: 90
+  pause_duration_sec: 90      # Pauza 90s po circuit breaker

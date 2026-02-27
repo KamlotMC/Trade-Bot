@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import logging
 import os
@@ -38,6 +39,7 @@ trading_service = TradingService(api_client=api_client, data_store=data_store)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 HARD_LIMITS = {
     "max_session_drawdown_pct": -4.0,
@@ -299,7 +301,7 @@ def get_price_data():
                 "bid": bid,
                 "ask": ask,
                 "change_percent": str(change),
-                "volume": volume
+                "usd_volume_est": volume
             }
         else:
             logger.warning("Price API error %s: %s", r.status_code, r.text[:200])
@@ -313,7 +315,7 @@ def get_price_data():
         "bid": 0.00003731,
         "ask": 0.00003769,
         "change_percent": "0",
-        "volume": 0
+        "usd_volume_est": 0
     }
 
 @app.get("/")
@@ -329,7 +331,7 @@ async def api_price():
             "bid": 0.00003731,
             "ask": 0.00003769,
             "change_percent": "0",
-            "volume": 0
+            "usd_volume_est": 0
         }
     
     return {
@@ -337,7 +339,7 @@ async def api_price():
         "bid": data["bid"],
         "ask": data["ask"],
         "change_percent": data["change_percent"],
-        "usd_volume_est": data["volume"]
+        "usd_volume_est": data.get("usd_volume_est", 0)
     }
 
 @app.get("/api/portfolio")
@@ -437,19 +439,22 @@ async def api_win_rate():
 
 
 def parse_fills_from_logs() -> list:
-    """Parse filled trades from bot logs."""
+    """Parse filled trades from bot logs by detecting balance changes."""
     import re
     log_path = find_project_file("logs", "market_maker.log")
     if not log_path.exists():
         return []
-    
+
     trades = []
     try:
-        with open(log_path, 'r') as f:
-            lines = f.readlines()
-        
+        # Otwórz jako binary i dekoduj linia po linii - log może zawierać bajty binarne
+        with open(log_path, 'rb') as f:
+            raw = f.read()
+        lines = raw.decode('utf-8', errors='replace').splitlines()
+
         prev_mewc = prev_usdt = None
-        
+        prev_ts = None
+
         for line in lines:
             ts_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|', line)
             line_ts = None
@@ -457,47 +462,64 @@ def parse_fills_from_logs() -> list:
                 try:
                     line_ts = datetime.strptime(ts_match.group(1), "%Y-%m-%d %H:%M:%S").isoformat()
                 except ValueError:
-                    line_ts = None
-            m = re.search(r'Balances\s+—\s+MEWC:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held\s*\|\s*USDT:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held', line)
-            if m:
-                mewc_total = float(m.group(1)) + float(m.group(2))
-                usdt_total = float(m.group(3)) + float(m.group(4))
-                
+                    pass
+
+            m = re.search(
+                r'Balances\s+\xe2\x80\x94|Balances\s+—\s+MEWC:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held\s*\|\s*USDT:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held',
+                line
+            )
+            # Drugi wzorzec bez problemu z encode
+            m2 = re.search(
+                r'Balances.*?MEWC:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held.*?USDT:\s*([\d.]+)\s*avail\s*/\s*([\d.]+)\s*held',
+                line
+            )
+            match = m2 or m
+            if match and match.lastindex >= 4:
+                try:
+                    mewc_total = float(match.group(1)) + float(match.group(2))
+                    usdt_total = float(match.group(3)) + float(match.group(4))
+                except (ValueError, IndexError):
+                    continue
+
                 if prev_mewc is not None and prev_usdt is not None:
                     mewc_diff = mewc_total - prev_mewc
                     usdt_diff = usdt_total - prev_usdt
-                    
-                    if mewc_diff > 100 and usdt_diff < -0.1:
-                        price = abs(usdt_diff / mewc_diff)
-                        trades.append({
-                            "timestamp": line_ts or datetime.now().isoformat(),
-                            "side": "BUY",
-                            "quantity": abs(mewc_diff),
-                            "price": price,
-                            "fee": 0,
-                            "pnl": 0,
-                            "order_id": f"log_{len(trades)}"
-                        })
-                        print(f"🟢 Detected BUY: {abs(mewc_diff):.0f} MEWC @ {price:.8f}")
-                    
-                    elif mewc_diff < -100 and usdt_diff > 0.1:
-                        price = abs(usdt_diff / mewc_diff)
-                        trades.append({
-                            "timestamp": line_ts or datetime.now().isoformat(),
-                            "side": "SELL",
-                            "quantity": abs(mewc_diff),
-                            "price": price,
-                            "fee": 0,
-                            "pnl": 0,
-                            "order_id": f"log_{len(trades)}"
-                        })
-                        print(f"🔴 Detected SELL: {abs(mewc_diff):.0f} MEWC @ {price:.8f}")
-                
+
+                    # BUY: dostajemy MEWC, dajemy USDT
+                    if mewc_diff > 100 and usdt_diff < -0.001:
+                        price = abs(usdt_diff / mewc_diff) if mewc_diff != 0 else 0
+                        if price > 0:
+                            trades.append({
+                                "timestamp": line_ts or prev_ts or datetime.now().isoformat(),
+                                "side": "BUY",
+                                "quantity": round(abs(mewc_diff), 4),
+                                "price": price,
+                                "fee": abs(usdt_diff) * 0.002,  # szacowany fee
+                                "pnl": 0,
+                                "order_id": f"log_buy_{len(trades)}"
+                            })
+
+                    # SELL: dajemy MEWC, dostajemy USDT
+                    elif mewc_diff < -100 and usdt_diff > 0.001:
+                        price = abs(usdt_diff / mewc_diff) if mewc_diff != 0 else 0
+                        if price > 0:
+                            trades.append({
+                                "timestamp": line_ts or prev_ts or datetime.now().isoformat(),
+                                "side": "SELL",
+                                "quantity": round(abs(mewc_diff), 4),
+                                "price": price,
+                                "fee": abs(usdt_diff) * 0.002,
+                                "pnl": 0,
+                                "order_id": f"log_sell_{len(trades)}"
+                            })
+
                 prev_mewc, prev_usdt = mewc_total, usdt_total
-                
+                if line_ts:
+                    prev_ts = line_ts
+
     except Exception as e:
-        print(f"Log parse error: {e}")
-    
+        logger.warning("Log parse error: %s", e)
+
     return trades
 
 @app.get("/api/fills")
@@ -626,6 +648,17 @@ async def api_cancel_all_orders():
 @app.get("/api/risk-cockpit")
 async def api_risk_cockpit():
     risk = await api_live_risk()
+    # If risk shows zeros (API failed), try to estimate from latest portfolio snapshot
+    if risk.get("inventory_ratio", 0) == 0 and not risk.get("risk_reason"):
+        try:
+            snap = data_store.get_portfolio_history(1)
+            if snap:
+                last = snap[-1]
+                total = sf(last.get("total_value_usdt", 0))
+                if total > 0:
+                    risk["_from_snapshot"] = True
+        except Exception:
+            pass
     hist = data_store.get_portfolio_history(30)
     values = [sf(h.get("total_value_usdt")) for h in hist]
 
@@ -732,7 +765,13 @@ async def api_delete_automation_rule(rule_id: int):
 
 @app.get("/api/open-orders")
 async def api_open_orders_live():
-    return trading_service.get_open_orders("MEWC_USDT")
+    """Get open orders from exchange API with fallback to log reconstruction."""
+    live = await run_blocking(trading_service.get_open_orders, "MEWC_USDT")
+    if live:
+        return live
+    # Fallback: reconstruct from bot logs (reads entire log file)
+    logger.info("Open orders API returned empty — falling back to log reconstruction")
+    return await run_blocking(log_parser.get_open_orders_from_logs)
 
 
 @app.post("/api/open-orders/{order_id}/cancel")
@@ -744,7 +783,23 @@ async def api_cancel_open_order(order_id: str):
 
 @app.get("/api/orderbook")
 async def api_orderbook(limit: int = 20):
-    return trading_service.get_orderbook("MEWC_USDT", limit)
+    """Get orderbook from exchange with fallback constructed from open orders in logs."""
+    result = await run_blocking(trading_service.get_orderbook, "MEWC_USDT", limit)
+    # Check if we got a real orderbook (must have asks or bids list)
+    if isinstance(result, dict) and (result.get("asks") or result.get("bids")):
+        return result
+    # Fallback: build a synthetic orderbook from our open orders in logs
+    logger.info("Orderbook API failed — building synthetic OB from open orders")
+    open_orders = await run_blocking(log_parser.get_open_orders_from_logs)
+    bids = sorted(
+        [{"price": o["price"], "quantity": o["quantity"]} for o in open_orders if o["side"] == "BUY"],
+        key=lambda x: x["price"], reverse=True
+    )
+    asks = sorted(
+        [{"price": o["price"], "quantity": o["quantity"]} for o in open_orders if o["side"] == "SELL"],
+        key=lambda x: x["price"]
+    )
+    return {"bids": bids[:limit], "asks": asks[:limit], "source": "log_fallback"}
 
 
 @app.post("/api/trades/{trade_id}/close")
@@ -753,8 +808,17 @@ async def api_close_trade(trade_id: int):
 
 
 @app.get("/api/history")
-async def api_history(days=30):
-    return data_store.get_portfolio_history(days)
+async def api_history(days: int = 30):
+    rows = data_store.get_portfolio_history(days)
+    # Ogranicz do max 300 punktów przez próbkowanie równomierne
+    if len(rows) > 300:
+        step = max(1, len(rows) // 300)
+        sampled = rows[::step]
+        # Zawsze zachowaj ostatni punkt
+        if rows and sampled[-1] is not rows[-1]:
+            sampled.append(rows[-1])
+        rows = sampled
+    return rows
 
 @app.get("/api/bot-status")
 async def api_bot_status():
@@ -883,7 +947,7 @@ async def api_live_risk():
             "risk_reason": balances_result.get("error"),
         }
 
-    bl = balances_result.get("balances", balances_result) if isinstance(balances_result, dict) else balances_result
+    bl = extract_balances_payload(balances_result)
     mewc = get_asset_totals(bl, "MEWC")
     usdt = get_asset_totals(bl, "USDT")
     pd = get_price_data() or {"last_price": 0}

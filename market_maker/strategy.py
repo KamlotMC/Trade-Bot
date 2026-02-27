@@ -145,23 +145,24 @@ class MarketMaker:
         # 3. Update balances & risk state
         try:
             self._refresh_balances(mid_price)
-            # ----------------- snapshot -----------------
             self._record_execution_quality_snapshot(mid_price)
-            # -------------------------------------------
         except Exception as e:
             logger.error("Error fetching balances: %s", e)
             return
 
-        # 4. Cancel existing orders
+        # 4. Check for filled orders and record P&L
+        self._check_and_record_fills()
+
+        # 5. Cancel existing orders
         self._cancel_all()
 
-        # 5. Compute quotes
+        # 6. Compute quotes
         quotes = self._compute_quotes(mid_price)
         if not quotes:
             logger.info("No quotes to place this cycle")
             return
 
-        # 6. Place orders
+        # 7. Place orders
         self._place_orders(quotes)
 
     # -------------------------------------------------------------------------
@@ -237,6 +238,10 @@ class MarketMaker:
             if bid_price > 0 and bid_cost < self.cfg.min_order_value_usdt:
                 qty = self.cfg.min_order_value_usdt / bid_price * 1.05
                 bid_cost = qty * bid_price
+            # Enforce minimum bid price floor
+            if self.cfg.min_bid_price > 0 and bid_price < self.cfg.min_bid_price:
+                logger.debug("Bid price %.8f below min_bid_price %.8f — skipping level %d", bid_price, self.cfg.min_bid_price, level)
+                bid_price = 0  # skip this level
             if bid_cost <= buy_budget and bid_price > 0:
                 if self.risk.check_exposure("buy", qty, bid_price):
                     quotes.append(QuoteLevel(side="buy", price=bid_price, quantity=qty, level=level))
@@ -261,6 +266,50 @@ class MarketMaker:
             mid_price, skew,
         )
         return quotes
+
+    def _check_and_record_fills(self) -> None:
+        """Check tracked orders for fills and record realized P&L to RiskManager.
+
+        Compares active_order_ids against current open orders from exchange.
+        Any tracked order that is no longer open has been filled (or cancelled).
+        We poll its status to distinguish fill from cancel and record P&L.
+        """
+        if not self._active_order_ids:
+            return
+
+        try:
+            open_orders_raw = self.client.get_active_orders(symbol=self.exchange_cfg.symbol)
+            open_ids = set()
+            if isinstance(open_orders_raw, list):
+                for o in open_orders_raw:
+                    oid = str(o.get("id") or o.get("orderId") or "")
+                    if oid:
+                        open_ids.add(oid)
+        except Exception as e:
+            logger.debug("Could not fetch active orders for fill check: %s", e)
+            return
+
+        for oid in list(self._active_order_ids):
+            if oid in open_ids:
+                continue  # still open
+            # Order is gone — check if it was filled
+            try:
+                order = self.client.get_order(oid)
+                status = str(order.get("status") or order.get("state") or "").upper()
+                side = str(order.get("side") or "").lower()
+                filled_qty = float(order.get("filled") or order.get("executedQty") or order.get("cumQty") or 0)
+                price = float(order.get("price") or order.get("avgPrice") or order.get("rate") or 0)
+                fee_rate = float(self.exchange_cfg.fee_maker_pct) if hasattr(self.exchange_cfg, 'fee_maker_pct') else 0.002
+                fee = filled_qty * price * fee_rate
+
+                if status in ("FILLED", "PARTIALLY_FILLED") and filled_qty > 0 and price > 0:
+                    self.risk.record_fill(side=side, quantity=filled_qty, price=price, fee=fee)
+                    logger.info(
+                        "FILL DETECTED  id=%s  side=%s  qty=%.2f  price=%.8f  fee=%.6f",
+                        oid, side, filled_qty, price, fee,
+                    )
+            except Exception as e:
+                logger.debug("Could not fetch order %s for fill check: %s", oid, e)
 
     # -------------------------------------------------------------------------
     # Order placement & cancellation
@@ -294,13 +343,6 @@ class MarketMaker:
         logger.info("Placed %d / %d orders", placed, len(quotes))
 
     def _cancel_all(self) -> None:
-        if not self._active_order_ids:
-            try:
-                self.client.cancel_all_orders()
-            except Exception as e:
-                logger.error("Error in bulk cancel: %s", e)
-            return
-
         cancelled = 0
         for oid in self._active_order_ids:
             try:
@@ -309,8 +351,16 @@ class MarketMaker:
             except Exception as e:
                 logger.debug("Cancel order %s failed (may already be filled): %s", oid, e)
 
-        logger.info("Cancelled %d / %d tracked orders", cancelled, len(self._active_order_ids))
+        if self._active_order_ids:
+            logger.info("Cancelled %d / %d tracked orders", cancelled, len(self._active_order_ids))
+
         self._active_order_ids.clear()
+
+        # Safety net: bulk cancel catches any orphaned orders (placed without returned ID)
+        try:
+            self.client.cancel_all_orders()
+        except Exception as e:
+            logger.debug("Bulk safety-cancel: %s", e)
 
     def _shutdown(self) -> None:
         logger.info("Shutting down — cancelling all open orders...")
